@@ -607,196 +607,221 @@ function applyLang() {
 let CURRENT_USER = null;
 
 /* ──────────────────────────────────────────────
-   ACCESS HISTORY LOGGER & MODAL
+   ACCESS HISTORY LOGGER & MODAL  (cross-device via Google Apps Script)
 ────────────────────────────────────────────── */
-const ACCESS_HISTORY_KEY = "tn_access_history";
-const ACCESS_LOG_COOLDOWN = 5 * 60 * 1000; // 5 min cooldown to avoid duplicate entries
 
-function getAccessHistory() {
-  try {
-    return JSON.parse(localStorage.getItem(ACCESS_HISTORY_KEY)) || [];
-  } catch (_) { return []; }
-}
+// ⚠ COLOCA AQUÍ LA URL de tu Apps Script desplegado:
+// Extensions > Apps Script > Deploy > Web App > "Anyone" > Copy URL
+const ACCESS_SCRIPT_URL = "APPS_SCRIPT_URL_AQUI";
 
-function saveAccessHistory(list) {
-  // Keep max 100 records
-  const trimmed = list.slice(-100);
-  try {
-    localStorage.setItem(ACCESS_HISTORY_KEY, JSON.stringify(trimmed));
-  } catch (_) {}
-}
+const ACCESS_HISTORY_KEY  = "tn_access_history";    // localStorage cache key
+const ACCESS_COOLDOWN_KEY = "tn_access_cooldown";   // timestamp of last log
+const ACCESS_LOG_COOLDOWN = 5 * 60 * 1000;          // 5 min between logs per device
 
 function parseUA(ua) {
   let browser = "Desconocido";
-  let os = "Desconocido";
+  let os      = "Desconocido";
 
-  // Browser
-  if (ua.includes("Edg/")) browser = "Microsoft Edge";
+  if (ua.includes("Edg/"))                             browser = "Edge";
   else if (ua.includes("OPR/") || ua.includes("Opera")) browser = "Opera";
-  else if (ua.includes("Chrome/")) browser = "Chrome";
+  else if (ua.includes("Chrome/"))                     browser = "Chrome";
   else if (ua.includes("Safari/") && !ua.includes("Chrome")) browser = "Safari";
-  else if (ua.includes("Firefox/")) browser = "Firefox";
-  else if (ua.includes("MSIE") || ua.includes("Trident")) browser = "Internet Explorer";
+  else if (ua.includes("Firefox/"))                    browser = "Firefox";
+  else if (ua.includes("MSIE") || ua.includes("Trident")) browser = "IE";
 
-  // OS
-  if (ua.includes("Windows NT 10")) os = "Windows 10/11";
+  if      (ua.includes("Windows NT 10")) os = "Windows 10/11";
   else if (ua.includes("Windows NT 6.3")) os = "Windows 8.1";
-  else if (ua.includes("Windows")) os = "Windows";
-  else if (ua.includes("iPhone")) os = "iPhone (iOS)";
-  else if (ua.includes("iPad")) os = "iPad (iPadOS)";
+  else if (ua.includes("Windows"))        os = "Windows";
+  else if (ua.includes("iPhone"))         os = "iPhone (iOS)";
+  else if (ua.includes("iPad"))           os = "iPad (iPadOS)";
   else if (ua.includes("Android")) {
     const m = ua.match(/Android ([0-9.]+)/);
     os = m ? `Android ${m[1]}` : "Android";
-  } else if (ua.includes("Mac OS X")) os = "macOS";
-  else if (ua.includes("Linux")) os = "Linux";
+  } else if (ua.includes("Mac OS X"))    os = "macOS";
+  else if (ua.includes("Linux"))         os = "Linux";
 
-  // Mobile indicator
-  const isMobile = /Mobi|Android|iPhone|iPad/i.test(ua);
+  const isMobile  = /Mobi|Android|iPhone|iPad/i.test(ua);
   const deviceType = isMobile ? "📱 Móvil" : "💻 Escritorio";
-
   return { browser, os, deviceType };
 }
 
 async function logAccessEvent(user) {
-  const history = getAccessHistory();
-  const now = Date.now();
-
-  // Cooldown: skip if last event from same user within cooldown period
-  const lastEntry = [...history].reverse().find(e => e.correo === user.correo);
-  if (lastEntry && now - lastEntry.ts < ACCESS_LOG_COOLDOWN) return;
+  // Cooldown: skip duplicate entries within 5 min on same device
+  const lastTs = parseInt(localStorage.getItem(ACCESS_COOLDOWN_KEY) || "0", 10);
+  const now    = Date.now();
+  if (now - lastTs < ACCESS_LOG_COOLDOWN) return;
+  localStorage.setItem(ACCESS_COOLDOWN_KEY, String(now));
 
   const ua = navigator.userAgent;
   const { browser, os, deviceType } = parseUA(ua);
 
-  // Build entry with basic info immediately
   const entry = {
-    ts: now,
-    usuario: user.nombre,
-    correo: user.correo,
-    rol: user.rol,
+    ts:          now,
+    usuario:     user.nombre  || "",
+    correo:      user.correo  || "",
+    rol:         user.rol     || "",
     dispositivo: `${deviceType} · ${browser}`,
-    os: os,
-    ip: "Obteniendo...",
-    ubicacion: "Obteniendo...",
+    os:          os,
+    ip:          "",
+    ubicacion:   "",
   };
 
-  history.push(entry);
-  saveAccessHistory(history);
-
-  // Async: fetch IP + location
+  // Fetch geolocation async then POST to Apps Script
   try {
-    const res = await fetch("https://ipapi.co/json/", { cache: "no-store" });
-    if (res.ok) {
-      const geo = await res.json();
-      entry.ip = geo.ip || "—";
-      entry.ubicacion = [geo.city, geo.region, geo.country_name].filter(Boolean).join(", ") || "—";
+    const geoRes = await fetch("https://ipapi.co/json/", { cache: "no-store" });
+    if (geoRes.ok) {
+      const geo    = await geoRes.json();
+      entry.ip        = geo.ip || "";
+      entry.ubicacion = [geo.city, geo.region, geo.country_name].filter(Boolean).join(", ") || "";
     }
-  } catch (_) {
-    entry.ip = "Sin datos";
-    entry.ubicacion = "Sin datos";
+  } catch (_) { /* no geo */ }
+
+  // POST to Google Apps Script (non-blocking)
+  if (ACCESS_SCRIPT_URL && ACCESS_SCRIPT_URL !== "APPS_SCRIPT_URL_AQUI") {
+    fetch(ACCESS_SCRIPT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify(entry),
+      mode: "no-cors"          // Apps Script requires no-cors
+    }).catch(() => {});
   }
 
-  // Re-save with updated geo info
-  const updated = getAccessHistory();
-  const idx = updated.findIndex(e => e.ts === entry.ts && e.correo === entry.correo);
-  if (idx >= 0) updated[idx] = entry;
-  else updated.push(entry);
-  saveAccessHistory(updated);
+  // Also save locally as fallback
+  try {
+    const local = JSON.parse(localStorage.getItem(ACCESS_HISTORY_KEY) || "[]");
+    local.push(entry);
+    localStorage.setItem(ACCESS_HISTORY_KEY, JSON.stringify(local.slice(-50)));
+  } catch (_) {}
 }
 
-window.openAccessHistoryModal = function () {
-  let modal = el("access-history-modal");
-  if (!modal) {
-    modal = document.createElement("div");
-    modal.id = "access-history-modal";
-    modal.className = "modal-overlay";
-    document.body.appendChild(modal);
-  }
+/* ── build row HTML ── */
+function _ahRow(e) {
+  const d     = new Date(e.ts);
+  const fecha = d.toLocaleDateString("es-MX",  { day: "2-digit", month: "2-digit", year: "numeric" });
+  const hora  = d.toLocaleTimeString("es-MX",  { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const ok    = (v) => v && v !== "Obteniendo..." && v !== "Sin datos" && v !== "";
+  const ubicHtml = ok(e.ubicacion)
+    ? `<span style="color:var(--green)">${e.ubicacion}</span>`
+    : `<span style="color:var(--txt3)">${e.ubicacion || "—"}</span>`;
+  const ipHtml = ok(e.ip)
+    ? `<span style="font-family:monospace">${e.ip}</span>`
+    : `<span style="color:var(--txt3)">—</span>`;
+  return `<tr>
+    <td><div style="font-weight:600;font-size:.84rem">${fecha}</div>
+        <div style="color:var(--txt3);font-size:.74rem">${hora}</div></td>
+    <td><div style="font-size:.83rem">${e.usuario || e.correo}</div>
+        <div style="color:var(--txt3);font-size:.72rem">${e.correo}</div></td>
+    <td><div style="font-size:.83rem">${e.dispositivo || "—"}</div>
+        <div style="color:var(--txt3);font-size:.72rem">${e.os || ""}</div></td>
+    <td style="font-size:.78rem">${ipHtml}</td>
+    <td style="font-size:.78rem">${ubicHtml}</td>
+  </tr>`;
+}
 
-  const history = getAccessHistory().slice().reverse();
-
-  const rowsHTML = history.length === 0
-    ? `<tr><td colspan="5" style="text-align:center;color:var(--txt3);padding:2rem">Sin registros de acceso aún.</td></tr>`
-    : history.map(e => {
-        const d = new Date(e.ts);
-        const fecha = d.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit", year: "numeric" });
-        const hora = d.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-        const ubicBadge = e.ubicacion && e.ubicacion !== "Obteniendo..." && e.ubicacion !== "Sin datos"
-          ? `<span style="color:var(--green)">${e.ubicacion}</span>`
-          : `<span style="color:var(--txt3)">${e.ubicacion || "—"}</span>`;
-        const ipBadge = e.ip && e.ip !== "Obteniendo..." && e.ip !== "Sin datos"
-          ? e.ip
-          : `<span style="color:var(--txt3)">${e.ip || "—"}</span>`;
-        return `<tr>
-          <td>
-            <div style="font-weight:600;font-size:.85rem">${fecha}</div>
-            <div style="color:var(--txt3);font-size:.75rem">${hora}</div>
-          </td>
-          <td>
-            <div style="font-size:.83rem">${e.usuario || e.correo}</div>
-            <div style="color:var(--txt3);font-size:.72rem">${e.correo}</div>
-          </td>
-          <td>
-            <div style="font-size:.83rem">${e.dispositivo}</div>
-            <div style="color:var(--txt3);font-size:.72rem">${e.os}</div>
-          </td>
-          <td style="font-size:.78rem;font-family:monospace">${ipBadge}</td>
-          <td style="font-size:.78rem">${ubicBadge}</td>
-        </tr>`;
-      }).join("");
-
+/* ── modal skeleton (shown immediately, data loads async) ── */
+function _ahModalSkeleton(modal) {
   modal.innerHTML = `
-    <div class="modal-content" style="max-width:860px;max-height:90vh;display:flex;flex-direction:column;">
-      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;padding:1.25rem 1.5rem;border-bottom:1px solid var(--border);flex-shrink:0">
+    <div class="modal-content" style="max-width:880px;max-height:90vh;display:flex;flex-direction:column;">
+      <div class="modal-header" style="display:flex;align-items:center;justify-content:space-between;padding:1.2rem 1.5rem;border-bottom:1px solid var(--border);flex-shrink:0">
         <div style="display:flex;align-items:center;gap:.75rem">
           <span style="width:34px;height:34px;background:rgba(29,122,245,.12);border-radius:50%;display:flex;align-items:center;justify-content:center;color:var(--blue-l)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
           </span>
           <div>
             <h3 style="font-size:1rem;font-weight:700;margin:0">🔒 Historial de Accesos</h3>
-            <p style="font-size:.75rem;color:var(--txt2);margin:0">Registro de todas las sesiones iniciadas · Máximo 100 registros</p>
+            <p id="ah-subtitle" style="font-size:.74rem;color:var(--txt2);margin:0">Cargando registros de todos los dispositivos…</p>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:.6rem">
-          <button class="aj-btn" style="font-size:.76rem;padding:.3rem .7rem" onclick="localStorage.removeItem('tn_access_history');window.openAccessHistoryModal()">🗑 Limpiar</button>
-          <button class="modal-close-btn" id="ah-close-btn" style="width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.2rem;color:var(--txt3)">×</button>
-        </div>
+        <button class="modal-close-btn" id="ah-close-btn" style="width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.3rem;color:var(--txt3)">×</button>
       </div>
-      <div style="flex:1;overflow-y:auto;overflow-x:auto;padding:1.25rem 1.5rem">
-        <table style="width:100%;border-collapse:collapse;font-size:.82rem;min-width:600px">
+      <div style="flex:1;overflow-y:auto;overflow-x:auto;padding:1.2rem 1.5rem">
+        <table style="width:100%;border-collapse:collapse;font-size:.82rem;min-width:580px">
           <thead>
             <tr style="border-bottom:1px solid var(--border2)">
-              <th style="text-align:left;padding:.5rem .75rem;color:var(--txt3);font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Fecha / Hora</th>
-              <th style="text-align:left;padding:.5rem .75rem;color:var(--txt3);font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Usuario</th>
-              <th style="text-align:left;padding:.5rem .75rem;color:var(--txt3);font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Dispositivo</th>
-              <th style="text-align:left;padding:.5rem .75rem;color:var(--txt3);font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Dirección IP</th>
-              <th style="text-align:left;padding:.5rem .75rem;color:var(--txt3);font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Ubicación</th>
+              <th style="text-align:left;padding:.45rem .7rem;color:var(--txt3);font-size:.71rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">Fecha / Hora</th>
+              <th style="text-align:left;padding:.45rem .7rem;color:var(--txt3);font-size:.71rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Usuario</th>
+              <th style="text-align:left;padding:.45rem .7rem;color:var(--txt3);font-size:.71rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Dispositivo</th>
+              <th style="text-align:left;padding:.45rem .7rem;color:var(--txt3);font-size:.71rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px;white-space:nowrap">IP</th>
+              <th style="text-align:left;padding:.45rem .7rem;color:var(--txt3);font-size:.71rem;font-weight:600;text-transform:uppercase;letter-spacing:.4px">Ubicación</th>
             </tr>
           </thead>
           <tbody id="ah-tbody">
-            ${rowsHTML}
+            <tr><td colspan="5" style="text-align:center;padding:2.5rem;color:var(--txt3)">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block;margin:0 auto .5rem;opacity:.4;animation:spin 1s linear infinite"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2" stroke-linecap="round"/></svg>
+              Cargando datos…
+            </td></tr>
           </tbody>
         </table>
       </div>
-      <div style="flex-shrink:0;padding:.85rem 1.5rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:.76rem;color:var(--txt3)">${history.length} registro${history.length !== 1 ? 's' : ''} encontrado${history.length !== 1 ? 's' : ''}</span>
+      <div style="flex-shrink:0;padding:.8rem 1.5rem;border-top:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+        <span id="ah-count" style="font-size:.75rem;color:var(--txt3)">—</span>
         <button class="aj-btn" id="ah-close-btn2" style="border-color:var(--blue);color:var(--blue-l)">Cerrar</button>
       </div>
     </div>
   `;
+}
 
+window.openAccessHistoryModal = async function () {
+  let modal = el("access-history-modal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id        = "access-history-modal";
+    modal.className = "modal-overlay";
+    document.body.appendChild(modal);
+  }
+
+  _ahModalSkeleton(modal);
   modal.classList.remove("hidden");
 
+  // Wire close handlers
   const closeModal = () => modal.classList.add("hidden");
-  el("ah-close-btn").onclick = closeModal;
+  el("ah-close-btn").onclick  = closeModal;
   el("ah-close-btn2").onclick = closeModal;
   modal.onclick = (ev) => { if (ev.target === modal) closeModal(); };
-
-  const ahEsc = (ev) => {
-    if (ev.key === "Escape") { closeModal(); document.removeEventListener("keydown", ahEsc); }
-  };
+  const ahEsc = (ev) => { if (ev.key === "Escape") { closeModal(); document.removeEventListener("keydown", ahEsc); } };
   document.addEventListener("keydown", ahEsc);
+
+  // Try to load from Apps Script (cloud), fall back to localStorage
+  let logs = [];
+  let source = "local";
+
+  if (ACCESS_SCRIPT_URL && ACCESS_SCRIPT_URL !== "APPS_SCRIPT_URL_AQUI") {
+    try {
+      const res = await fetch(ACCESS_SCRIPT_URL, { cache: "no-store" });
+      if (res.ok) {
+        logs   = await res.json();
+        source = "cloud";
+      }
+    } catch (_) { /* fall through */ }
+  }
+
+  // Fallback: localStorage
+  if (source === "local") {
+    try {
+      logs = JSON.parse(localStorage.getItem(ACCESS_HISTORY_KEY) || "[]");
+      logs.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    } catch (_) { logs = []; }
+  }
+
+  const tbody    = el("ah-tbody");
+  const subtitle = el("ah-subtitle");
+  const countEl  = el("ah-count");
+
+  if (!tbody) return;
+
+  if (logs.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--txt3);padding:2.5rem">Sin registros de acceso aún.</td></tr>`;
+  } else {
+    tbody.innerHTML = logs.map(_ahRow).join("");
+  }
+
+  const srcLabel = source === "cloud"
+    ? "📡 Todos los dispositivos · Google Sheets"
+    : "⚠ Solo este dispositivo (Apps Script no configurado)";
+  if (subtitle) subtitle.textContent = srcLabel;
+  if (countEl)  countEl.textContent  = `${logs.length} registro${logs.length !== 1 ? "s" : ""}`;
 };
+
 
 
 /* ═══════════════════════════════════════════════
