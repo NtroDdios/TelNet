@@ -1,0 +1,20 @@
+{
+  "name": "TelNet - Monitoreo en Tiempo Real",
+  "short_name": "TelNet",
+  "description": "Monitoreo en tiempo real de operaciones y mantenimiento de pozos y estaciones.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#080f1a",
+  "theme_color": "#0a1628",
+  "orientation": "any",
+  "lang": "es",
+  "icons": [
+    {
+      "src": "assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["utilities", "productivity"]
+}

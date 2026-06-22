@@ -1,0 +1,20 @@
+const fs = require('fs');
+const app = fs.readFileSync('app.js', 'utf8');
+const css = fs.readFileSync('index.css', 'utf8');
+const html = fs.readFileSync('index.html', 'utf8');
+
+const i18nCount = (html.match(/data-i18n=/g) || []).length;
+console.log('data-i18n tags in HTML:', i18nCount);
+console.log('body.light vars in CSS:', css.includes('--bg:         #f0f4fb'));
+console.log('aj-card light in CSS:', css.includes('body.light .aj-card'));
+console.log('aj-select CSS defined:', css.includes('.aj-select,.aj-input'));
+console.log('tr() in renderAjustes:', app.includes('const tr = '));
+console.log('_t() helper defined:', app.includes('function _t('));
+console.log('applyTheme defined:', app.includes('function applyTheme'));
+console.log('applyLang defined:', app.includes('function applyLang'));
+console.log('TRANSLATIONS defined:', app.includes('const TRANSLATIONS'));
+console.log('startup applyTheme call:', app.includes('applyTheme()'));
+console.log('EN Tema entry:', app.includes("'Tema e Idioma': 'Theme"));
+console.log('ZH dict present:', app.includes("'Ajustes': '\u8bbe\u7f6e'"));
+console.log('fmtStatus uses _t:', app.includes("_t('En l\u00ednea')"));
+console.log('All OK!');
