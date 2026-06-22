@@ -707,13 +707,12 @@ canvas.main-chart{width:100%!important;height:200px!important}
   display:flex;flex-direction:column;gap:1.25rem;
 }
 
-/* Top row: 3 cards side by side */
+/* Top row: 2 cards side by side */
 .aj-top-row{
   display:grid;
-  grid-template-columns:1fr 1fr 1fr;
+  grid-template-columns:1fr 1fr;
   gap:1rem;
 }
-@media(max-width:1100px){.aj-top-row{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.aj-top-row{grid-template-columns:1fr}}
 
 .aj-card{
@@ -1152,6 +1151,21 @@ canvas.tdc-chart { width: 100% !important; height: 90px !important; }
   height: 380px;
   position: relative;
 }
+
+/* ══════════════════════════════════════════════
+   ACCESS HISTORY MODAL TABLE
+══════════════════════════════════════════════ */
+#access-history-modal .modal-content {
+  max-width: 860px;
+}
+#ah-tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background var(--t);
+}
+#ah-tbody tr:last-child { border-bottom: none; }
+#ah-tbody tr:hover { background: rgba(255,255,255,0.025); }
+#ah-tbody td { padding: .6rem .75rem; vertical-align: top; }
+body.light #ah-tbody tr:hover { background: var(--bg3); }
 /* ══════════════════════════════════════════════
    DATE RANGE PICKER OVERRIDES
 ══════════════════════════════════════════════ */
@@ -1431,6 +1445,7 @@ input[type="datetime-local"]:focus {
   margin-top: 1rem;
   max-height: 250px;
   overflow-y: auto;
+  overflow-x: auto;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: rgba(255,255,255,0.02);

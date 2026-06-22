@@ -210,6 +210,13 @@ const DB = (function () {
       if (cache.usuarios.rows[i].correo.toLowerCase() === emailLower) {
         cache.usuarios.rows[i].rol = newRole.trim();
         found = true;
+        
+        if (typeof CURRENT_USER !== "undefined" && CURRENT_USER && CURRENT_USER.correo.toLowerCase() === emailLower) {
+          CURRENT_USER.rol = newRole.trim();
+          try {
+            localStorage.setItem("tn_logged_user", JSON.stringify(CURRENT_USER));
+          } catch (e) {}
+        }
         break;
       }
     }
@@ -501,10 +508,41 @@ const DB = (function () {
   }
 
   async function loadUsuarios() {
-    console.log(
-      "[DB] loadUsuarios invocado. Retornando usuarios pre-cargados:",
-      cache.usuarios.rows ? cache.usuarios.rows.length : 0,
-    );
+    var now = Date.now();
+    if (!cache.usuarios.rows.length || (now - cache.usuarios.ts > TTL)) {
+      try {
+        var result = await fetchCSV(USUARIOS_CSV, true);
+        var remoteUsers = result.rows.map(function(line) {
+          var p = csvSplit(line);
+          return {
+            nombre: p[0] ? p[0].trim() : "",
+            correo: p[1] ? p[1].trim().toLowerCase() : "",
+            rol: p[2] ? p[2].trim().toLowerCase() : "supervisor",
+            password: p[3] ? p[3].trim() : ""
+          };
+        }).filter(function(u) {
+          return u.nombre && u.correo && u.password;
+        });
+
+        remoteUsers.forEach(function(ru) {
+          var localUser = cache.usuarios.rows.find(function(lu) {
+            return lu.correo.toLowerCase() === ru.correo;
+          });
+          if (localUser) {
+            localUser.nombre = ru.nombre;
+            localUser.rol = ru.rol;
+            localUser.password = ru.password;
+          } else {
+            cache.usuarios.rows.push(ru);
+          }
+        });
+
+        cache.usuarios.ts = now;
+        saveUsuarios();
+      } catch (e) {
+        console.warn("[DB] Usuarios fetch failed, using cache:", e.message);
+      }
+    }
     return cache.usuarios.rows;
   }
 

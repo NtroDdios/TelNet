@@ -1,6 +1,6 @@
 # TelNet – Portal de Telemetría PWA
 
-TelNet es una aplicación web progresiva (PWA) diseñada para el monitoreo y visualización en tiempo real de la telemetría en **Estaciones de Recolección y Bombeo (E.R.B.)** y **Pozos Petroleros** (campo Ébano, San Luis Potosí).
+TelNet es una aplicación web progresiva (PWA) diseñada para el monitoreo y visualización en tiempo real de la telemetría en **Estaciones de Recolección y Bombeo (E.R.B.).**
 
 La aplicación funciona de manera offline-first, sincronizándose de forma dinámica con bases de datos en la nube hospedadas en **Google Sheets**, y ofrece herramientas avanzadas para la generación de reportes y administración de usuarios.
 
@@ -8,7 +8,7 @@ La aplicación funciona de manera offline-first, sincronizándose de forma diná
 
 ## 🚀 Características Clave
 
-- **Monitoreo en Tiempo Real**: 
+- **Monitoreo en Tiempo Real**:
   - Visualización del estado operativo y niveles de tanques industriales (TV-601, TV-602, TV-741).
   - Telemetría en vivo para pozos (Presión TP, Torque, Corriente, Temperatura, Voltaje L-L, Frecuencia y RPM del Generador).
 - **Sincronización Inteligente (Google Sheets)**:
@@ -37,11 +37,13 @@ La aplicación funciona de manera offline-first, sincronizándose de forma diná
 ## 💻 Instalación y Desarrollo Local
 
 ### Requisitos previos
+
 Solo necesitas un servidor web local sencillo. Por ejemplo, utilizando **Python** (que viene instalado por defecto en la mayoría de sistemas operativos).
 
 ### Instrucciones paso a paso
 
 1. **Clonar el repositorio**:
+
    ```bash
    git clone https://github.com/NtroDdios/TelNet.git
    cd TelNet
@@ -49,13 +51,13 @@ Solo necesitas un servidor web local sencillo. Por ejemplo, utilizando **Python*
 
 2. **Iniciar el servidor local**:
    Si usas Python:
+
    ```bash
    python -m http.server 8000
    ```
 
 3. **Abrir en el navegador**:
    Visita `http://localhost:8000` en tu navegador preferido.
-
 4. **Instalación como PWA**:
    Haz clic en el icono de instalación de la barra de direcciones de tu navegador (Chrome/Edge/Safari) para instalarla como una aplicación nativa en tu escritorio o pantalla de inicio móvil.
 
@@ -63,12 +65,12 @@ Solo necesitas un servidor web local sencillo. Por ejemplo, utilizando **Python*
 
 ## 🔒 Estructura de Roles del Sistema
 
-| Rol | Ver Datos | Exportar PDF | Editar Ajustes | Gestionar Usuarios |
-| :--- | :---: | :---: | :---: | :---: |
-| **Administrador** | ✓ | ✓ | ✓ | ✓ |
-| **Supervisor** | ✓ | ✓ | ✗ | ✗ |
-| **Operador** | ✓ | ✓ | ✗ | ✗ |
-| **Visitante** | ✓ | ✓ | ✗ | ✗ |
+| Rol               | Ver Datos | Exportar PDF | Editar Ajustes | Gestionar Usuarios |
+| :---------------- | :-------: | :----------: | :------------: | :----------------: |
+| **Administrador** |     ✓     |      ✓       |       ✓        |         ✓          |
+| **Supervisor**    |     ✓     |      ✓       |       ✗        |         ✗          |
+| **Operador**      |     ✓     |      ✓       |       ✗        |         ✗          |
+| **Visitante**     |     ✓     |      ✓       |       ✗        |         ✗          |
 
 ---
 
