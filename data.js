@@ -166,6 +166,20 @@ const DB = (function () {
     }
   }
 
+  function syncUserAction(payload) {
+    var url = window.ACCESS_SCRIPT_URL || localStorage.getItem("tn_access_script_url"); // Fallback
+    if (url && url !== "APPS_SCRIPT_URL_AQUI") {
+      fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify(payload),
+        mode: "no-cors"
+      }).catch(function(e) {
+        console.error("[DB] Sync error:", e);
+      });
+    }
+  }
+
   function addUsuario(u) {
     if (!u.nombre || !u.correo || !u.password || !u.rol) {
       throw new Error("Datos incompletos");
@@ -187,6 +201,15 @@ const DB = (function () {
     cache.usuarios.rows.push(newUser);
     cache.usuarios.ts = Date.now();
     saveUsuarios();
+
+    syncUserAction({
+      action: "addUsuario",
+      nombre: newUser.nombre,
+      correo: newUser.correo,
+      rol: newUser.rol,
+      password: newUser.password
+    });
+
     return newUser;
   }
 
@@ -201,6 +224,11 @@ const DB = (function () {
     }
     cache.usuarios.ts = Date.now();
     saveUsuarios();
+
+    syncUserAction({
+      action: "deleteUsuario",
+      correo: emailLower
+    });
   }
 
   function updateUsuarioRole(email, newRole) {
@@ -225,6 +253,12 @@ const DB = (function () {
     }
     cache.usuarios.ts = Date.now();
     saveUsuarios();
+
+    syncUserAction({
+      action: "updateUsuarioRole",
+      correo: emailLower,
+      rol: newRole.trim()
+    });
   }
 
   function addUsuariosBulk(text, defaultRole) {

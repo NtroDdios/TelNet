@@ -39,7 +39,31 @@ var MAPA_FALLAS_GEN = {
 
 const SHEET_NAME_LOG = "HistorialAccesos";
 
-// --- HELPERS PARA HISTORIAL DE ACCESOS ---
+// --- HELPERS PARA HISTORIAL DE ACCESOS Y USUARIOS ---
+function getOrCreateUsersSheet() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheet = ss.getSheetByName("Usuarios") || ss.getSheetByName("USUARIOS");
+  if (!sheet) {
+    var sheets = ss.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      if (sheets[i].getSheetId().toString() === "230819089") {
+        return sheets[i];
+      }
+    }
+    for (var i = 0; i < sheets.length; i++) {
+      var firstRow = sheets[i].getRange(1, 1, 1, 4).getValues()[0];
+      if (firstRow && firstRow.some(function(cell) { return cell && cell.toString().toLowerCase().indexOf("correo") !== -1; })) {
+        return sheets[i];
+      }
+    }
+    sheet = ss.insertSheet("Usuarios");
+    sheet.appendRow(["nombre", "correo", "rol", "password"]);
+    sheet.setFrozenRows(1);
+    sheet.getRange(1, 1, 1, 4).setFontWeight("bold").setBackground("#1a1a2e").setFontColor("#ffffff");
+  }
+  return sheet;
+}
+
 function getOrCreateAccessSheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName(SHEET_NAME_LOG);
@@ -57,7 +81,6 @@ function getOrCreateAccessSheet() {
       "ubicacion",
     ]);
     sheet.setFrozenRows(1);
-    // Formato de cabecera
     sheet
       .getRange(1, 1, 1, 9)
       .setFontWeight("bold")
@@ -125,13 +148,61 @@ function doGet(e) {
   }
 }
 
-// --- POST: Para registrar eventos (Telemetría de pozos u Historial de Accesos) ---
+// --- POST: Para registrar eventos (Telemetría, Accesos, Administración de Usuarios) ---
 function doPost(e) {
   try {
     var data = JSON.parse(e.postData.contents);
 
-    // Si la petición contiene correo o dispositivo, se trata de un registro de acceso
-    if (data.correo !== undefined || data.dispositivo !== undefined) {
+    // --- ACCIONES DE USUARIOS ---
+    if (data.action === "addUsuario") {
+      var sheet = getOrCreateUsersSheet();
+      if (sheet) {
+        sheet.appendRow([
+          data.nombre || "",
+          data.correo || "",
+          data.rol || "supervisor",
+          data.password || ""
+        ]);
+      }
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: true }),
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (data.action === "deleteUsuario") {
+      var sheet = getOrCreateUsersSheet();
+      if (sheet) {
+        var rows = sheet.getDataRange().getValues();
+        for (var i = 1; i < rows.length; i++) {
+          if (rows[i][1] && rows[i][1].toString().toLowerCase().trim() === data.correo.toLowerCase().trim()) {
+            sheet.deleteRow(i + 1);
+            break;
+          }
+        }
+      }
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: true }),
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    if (data.action === "updateUsuarioRole") {
+      var sheet = getOrCreateUsersSheet();
+      if (sheet) {
+        var rows = sheet.getDataRange().getValues();
+        for (var i = 1; i < rows.length; i++) {
+          if (rows[i][1] && rows[i][1].toString().toLowerCase().trim() === data.correo.toLowerCase().trim()) {
+            sheet.getRange(i + 1, 3).setValue(data.rol);
+            break;
+          }
+        }
+      }
+      return ContentService.createTextOutput(
+        JSON.stringify({ ok: true }),
+      ).setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // --- HISTORIAL DE ACCESOS ---
+    if (data.dispositivo !== undefined) {
       registrarAcceso(data);
       return ContentService.createTextOutput(
         JSON.stringify({ ok: true }),

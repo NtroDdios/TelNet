@@ -613,6 +613,7 @@ let CURRENT_USER = null;
 // ⚠ COLOCA AQUÍ LA URL de tu Apps Script desplegado:
 // Extensions > Apps Script > Deploy > Web App > "Anyone" > Copy URL
 const ACCESS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzvORT5f8pyrca71o73mCE8xakID5ZaIyVcI5ioYRX1rRc4sXN2wQj_wD_3MYbdp2oC/exec";
+window.ACCESS_SCRIPT_URL = ACCESS_SCRIPT_URL;
 
 const ACCESS_HISTORY_KEY  = "tn_access_history";    // localStorage cache key
 const ACCESS_COOLDOWN_KEY = "tn_access_cooldown";   // timestamp of last log
