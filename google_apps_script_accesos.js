@@ -40,8 +40,22 @@ var MAPA_FALLAS_GEN = {
 const SHEET_NAME_LOG = "HistorialAccesos";
 
 // --- HELPERS PARA HISTORIAL DE ACCESOS Y USUARIOS ---
-function getOrCreateUsersSheet() {
+function getActiveSpreadsheet() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    try {
+      ss = SpreadsheetApp.openById("1dvq2uDcnzf2g6yPECKMgb-Ij-bw4OV_mAfLBCHkJeJg");
+    } catch(e) {
+      try {
+        ss = SpreadsheetApp.openById("1vT_8dadg9C3qMvGt9nHj29zA4gpewQt_5J1DToV9jtunqdS-qDY9WaBZ89YBhhGvZIx9AQSAdQBDov1");
+      } catch(ex) {}
+    }
+  }
+  return ss;
+}
+
+function getOrCreateUsersSheet() {
+  var ss = getActiveSpreadsheet();
   var sheet = ss.getSheetByName("Usuarios") || ss.getSheetByName("USUARIOS");
   if (!sheet) {
     var sheets = ss.getSheets();
@@ -65,7 +79,7 @@ function getOrCreateUsersSheet() {
 }
 
 function getOrCreateAccessSheet() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getActiveSpreadsheet();
   var sheet = ss.getSheetByName(SHEET_NAME_LOG);
   if (!sheet) {
     sheet = ss.insertSheet(SHEET_NAME_LOG);
@@ -210,7 +224,7 @@ function doPost(e) {
     }
 
     // De lo contrario, corre la telemetría original
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getActiveSpreadsheet();
     var sheet = ss.getSheetByName("DATOS") || ss.getSheets()[0];
 
     var ahora = new Date();

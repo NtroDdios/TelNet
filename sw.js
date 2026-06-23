@@ -1,4 +1,4 @@
-const CACHE_NAME = "telnet-v1.0.17";
+const CACHE_NAME = "telnet-v1.0.18";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
@@ -42,6 +42,16 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
+
+  // Bypass non-GET requests and external API endpoints completely
+  if (
+    request.method !== "GET" ||
+    url.host.includes("script.google.com") ||
+    url.host.includes("ipapi.co")
+  ) {
+    event.respondWith(fetch(request));
+    return;
+  }
 
   // Network-first for CSV data from Google Sheets
   if (
