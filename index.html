@@ -64,10 +64,22 @@
   <body>
     <!-- ═══════════════ LOGIN VIEW ═══════════════ -->
     <div id="view-login" class="login-page">
-      <!-- Background image -->
+      <!-- Background overlays -->
       <div class="login-bg">
         <div class="login-bg-overlay"></div>
       </div>
+      
+      <!-- Concentric circles in top-left -->
+      <svg class="decor-circles" viewBox="0 0 500 500" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="50" cy="50" r="100" stroke="rgba(0, 168, 255, 0.04)" stroke-width="1.5"/>
+        <circle cx="50" cy="50" r="160" stroke="rgba(0, 168, 255, 0.04)" stroke-width="1.5"/>
+        <circle cx="50" cy="50" r="220" stroke="rgba(0, 168, 255, 0.04)" stroke-width="1.5"/>
+        <circle cx="50" cy="50" r="280" stroke="rgba(0, 168, 255, 0.04)" stroke-width="1.5"/>
+        <circle cx="50" cy="50" r="340" stroke="rgba(0, 168, 255, 0.04)" stroke-width="1.5"/>
+        <circle cx="50" cy="50" r="400" stroke="rgba(0, 168, 255, 0.04)" stroke-width="1.5"/>
+        <circle cx="50" cy="50" r="460" stroke="rgba(0, 168, 255, 0.04)" stroke-width="1.5"/>
+      </svg>
+      <div class="decor-dots"></div>
 
       <div class="login-split">
         <!-- LEFT PANEL -->
@@ -103,8 +115,11 @@
             >
           </div>
 
-          <p class="login-tagline">
-            Monitoreo en tiempo real de<br />operaciones y mantenimiento
+          <h1 class="login-title">
+            Monitoreo en tiempo real de<br /><span class="gold">operaciones y mantenimiento</span>
+          </h1>
+          <p class="login-subtitle">
+            Plataforma inteligente para visualizar, analizar y optimizar tus estaciones, pozos y tanques al instante.
           </p>
 
           <div class="login-features">
@@ -120,8 +135,8 @@
                 </svg>
               </span>
               <div class="feature-text">
-                <strong>Monitoreo en tiempo real</strong>
-                <span
+                <strong data-i18n="Monitoreo en tiempo real">Monitoreo en tiempo real</strong>
+                <span data-i18n="Visualiza el estado de tus estaciones, pozos y tanques al instante."
                   >Visualiza el estado de tus estaciones, pozos y tanques al
                   instante.</span
                 >
@@ -139,8 +154,8 @@
                 </svg>
               </span>
               <div class="feature-text">
-                <strong>Alertas inteligentes</strong>
-                <span
+                <strong data-i18n="Alertas inteligentes">Alertas inteligentes</strong>
+                <span data-i18n="Recibe notificaciones y alertas ante cualquier anomalía."
                   >Recibe notificaciones y alertas ante cualquier
                   anomalía.</span
                 >
@@ -160,8 +175,8 @@
                 </svg>
               </span>
               <div class="feature-text">
-                <strong>Datos y reportes</strong>
-                <span
+                <strong data-i18n="Datos y reportes">Datos y reportes</strong>
+                <span data-i18n="Genera reportes detallados y exporta la información que necesitas."
                   >Genera reportes detallados y exporta la información que
                   necesitas.</span
                 >
@@ -176,18 +191,21 @@
                 fill="none"
                 stroke="currentColor"
                 stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
               >
-                <path d="M1 6C3 2 7 2 9 6L12 12L15 6C17 2 21 2 23 6" />
-                <path d="M1 12C3 8 7 8 9 12L12 18L15 12C17 8 21 8 23 12" />
+                <path d="M12 20h.01" />
+                <path d="M8.5 16.5a5 5 0 0 1 7 0" />
+                <path d="M5 13a10 10 0 0 1 14 0" />
               </svg>
             </span>
             <div class="status-card-text">
-              <strong>Sistema listo para monitoreo</strong>
-              <span>Conectado y sincronizado</span>
+              <strong data-i18n="Sistema listo para monitoreo">Sistema listo para monitoreo</strong>
+              <span data-i18n="Conectado y sincronizado">Conectado y sincronizado</span>
             </div>
             <div class="status-card-badge">
               <span class="dot-green">●</span>
-              <span>En línea</span>
+              <span data-i18n="En línea">En línea</span>
             </div>
           </div>
         </div>
@@ -271,6 +289,15 @@
           <!-- ── END MOBILE BRAND ── -->
 
           <div class="login-card">
+            <!-- Center Top Circle Icon -->
+            <div class="login-card-icon-wrap">
+              <div class="login-card-icon">
+                <svg viewBox="0 0 44 58" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M22 2C22 2 3 24 3 37C3 48.05 11.51 57 22 57C32.49 57 41 48.05 41 37C41 24 22 2 22 2Z" stroke="#f5a623" stroke-width="3.5" fill="none"/>
+                </svg>
+              </div>
+            </div>
+
             <h1 class="login-card-title" data-i18n="Iniciar sesión">Iniciar sesión</h1>
             <p class="login-card-sub" data-i18n="Accede a tu cuenta para continuar">Accede a tu cuenta para continuar</p>
 
@@ -291,6 +318,7 @@
                 <input
                   type="email"
                   id="l-email"
+                  value="mauro.cedillo@deppg.com"
                   placeholder="ejemplo@correo.com"
                   autocomplete="email"
                 />
@@ -314,6 +342,7 @@
                 <input
                   type="password"
                   id="l-pass"
+                  value="password123"
                   placeholder="Ingresa tu contraseña"
                   data-i18n-placeholder="Ingresa tu contraseña"
                   autocomplete="current-password"
@@ -334,7 +363,7 @@
 
             <div class="form-row-check">
               <label class="check-label"
-                ><input type="checkbox" id="remember" /> <span data-i18n="Recordarme">Recordarme</span></label
+                ><input type="checkbox" id="remember" checked /> <span data-i18n="Recordarme">Recordarme</span></label
               >
               <a
                 href="#"
@@ -351,26 +380,195 @@
 
             <button class="btn-login" id="btn-login">
               <span data-i18n="Iniciar sesión">Iniciar sesión</span>
-              <svg
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2.5"
-              >
-                <line x1="5" y1="12" x2="19" y2="12" />
-                <polyline points="12 5 19 12 12 19" />
-              </svg>
+              <span class="btn-arrow">&nbsp;→</span>
             </button>
 
-            <div class="login-divider"></div>
+            <div class="login-card-divider"></div>
 
             <p class="no-account">
-              <span data-i18n="¿No tienes una cuenta?">¿No tienes una cuenta?</span> <a href="#" data-i18n="Contácta al administrador">Contácta al administrador</a>
+              <span data-i18n="¿No tienes una cuenta?">¿No tienes una cuenta?</span> <a href="#" id="contact-admin-link" data-i18n="Contácta al administrador">Contácta al administrador</a>
             </p>
+
+            <div class="login-card-divider"></div>
+
+            <div class="login-secure-footer">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+              <span data-i18n="Conexión segura y cifrada">Conexión segura y cifrada</span>
+            </div>
           </div>
           <p class="login-footer">
             <span data-i18n="© 2026 TelNet. Todos los derechos reservados.">© 2026 TelNet. Todos los derechos reservados.</span>
           </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ CONTACT ADMIN OVERLAY ═══════════════ -->
+    <div id="contact-admin-overlay" class="ca-overlay hidden">
+      <!-- Same background as login -->
+      <div class="login-bg"><div class="login-bg-overlay"></div></div>
+
+      <!-- STEP 1: Contact Form -->
+      <div id="ca-step-form" class="ca-step ca-form-wrap">
+        <div class="ca-form-card">
+          <!-- Logo -->
+          <div class="ca-logo">
+            <span class="ca-drop">
+              <svg viewBox="0 0 44 58" fill="none">
+                <path d="M22 2C22 2 3 24 3 37C3 48.05 11.51 57 22 57C32.49 57 41 48.05 41 37C41 24 22 2 22 2Z" fill="url(#lgCA)"/>
+                <defs><linearGradient id="lgCA" x1="22" y1="2" x2="22" y2="57" gradientUnits="userSpaceOnUse"><stop stop-color="#FFB800"/><stop offset="1" stop-color="#FF6B00"/></linearGradient></defs>
+              </svg>
+            </span>
+            <span class="ca-logo-text">Tel<span class="gold">Net</span></span>
+          </div>
+
+          <h2 class="ca-form-title">Contactar al <span class="gold">Administrador</span></h2>
+          <p class="ca-form-sub">Completa el formulario y un administrador se pondrá en contacto contigo.</p>
+
+          <div class="ca-form-fields">
+            <div class="ca-field-group">
+              <label for="ca-nombre">Nombre completo</label>
+              <div class="ca-input-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <input type="text" id="ca-nombre" placeholder="Tu nombre completo" autocomplete="name"/>
+              </div>
+            </div>
+            <div class="ca-field-group">
+              <label for="ca-correo">Correo de contacto</label>
+              <div class="ca-input-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                <input type="email" id="ca-correo" placeholder="tu@correo.com" autocomplete="email"/>
+              </div>
+            </div>
+            <div class="ca-field-group">
+              <label for="ca-mensaje">Mensaje</label>
+              <div class="ca-input-wrap ca-textarea-wrap">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="align-self:flex-start;margin-top:0.7rem"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <textarea id="ca-mensaje" rows="3" placeholder="Describe brevemente por qué necesitas acceso..."></textarea>
+              </div>
+            </div>
+          </div>
+
+          <p id="ca-form-err" class="ca-form-err hidden"></p>
+
+          <div class="ca-form-actions">
+            <button id="ca-cancel-form" class="ca-btn-cancel">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+              Volver
+            </button>
+            <button id="ca-submit-btn" class="ca-btn-submit">
+              <span>Enviar solicitud</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- STEP 2: Sending Animation -->
+      <div id="ca-step-sending" class="ca-step ca-sending-wrap hidden">
+        <!-- Left panel -->
+        <div class="ca-sending-left">
+          <!-- Logo -->
+          <div class="ca-logo">
+            <span class="ca-drop">
+              <svg viewBox="0 0 44 58" fill="none">
+                <path d="M22 2C22 2 3 24 3 37C3 48.05 11.51 57 22 57C32.49 57 41 48.05 41 37C41 24 22 2 22 2Z" fill="url(#lgCA2)"/>
+                <defs><linearGradient id="lgCA2" x1="22" y1="2" x2="22" y2="57" gradientUnits="userSpaceOnUse"><stop stop-color="#FFB800"/><stop offset="1" stop-color="#FF6B00"/></linearGradient></defs>
+              </svg>
+            </span>
+            <span class="ca-logo-text">Tel<span class="gold">Net</span></span>
+          </div>
+
+          <h2 class="ca-sending-title">Contactando al <span class="gold">administrador...</span></h2>
+          <p class="ca-sending-sub">Estamos enviando tu solicitud.<br/>Un administrador te responderá<br/>lo antes posible.</p>
+
+          <!-- Progress steps -->
+          <div class="ca-steps">
+            <div class="ca-step-item active" id="ca-st-1">
+              <span class="ca-step-icon blue">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              </span>
+              <div class="ca-step-text">
+                <strong>Enviando solicitud</strong>
+                <span>Tu mensaje está siendo enviado.</span>
+              </div>
+            </div>
+            <div class="ca-step-item" id="ca-st-2">
+              <span class="ca-step-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              </span>
+              <div class="ca-step-text">
+                <strong>En espera</strong>
+                <span>El administrador ha recibido tu solicitud.</span>
+              </div>
+            </div>
+            <div class="ca-step-item" id="ca-st-3">
+              <span class="ca-step-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+              <div class="ca-step-text">
+                <strong>Completado</strong>
+                <span>Te daremos una respuesta pronto.</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Info box -->
+          <div class="ca-info-box">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div>
+              <strong>Información</strong>
+              <span>No cierres la ventana. Serás redirigido automáticamente cuando tengamos respuesta.</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right panel: animated envelope -->
+        <div class="ca-sending-right">
+          <div class="ca-orbit-wrap">
+            <!-- Spinning arcs -->
+            <svg class="ca-orbit-svg" viewBox="0 0 300 300">
+              <circle cx="150" cy="150" r="130" fill="none" stroke="rgba(77,159,252,0.12)" stroke-width="2" stroke-dasharray="4 6"/>
+              <circle cx="150" cy="150" r="130" fill="none" stroke="url(#arcBlue)" stroke-width="5" stroke-linecap="round" stroke-dasharray="210 608" class="ca-arc-blue"/>
+              <circle cx="150" cy="150" r="130" fill="none" stroke="url(#arcOrange)" stroke-width="5" stroke-linecap="round" stroke-dasharray="120 608" stroke-dashoffset="-260" class="ca-arc-orange"/>
+              <defs>
+                <linearGradient id="arcBlue" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#1d7af5"/><stop offset="100%" stop-color="#4d9ffc"/></linearGradient>
+                <linearGradient id="arcOrange" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#FF6B00"/><stop offset="100%" stop-color="#FFB800"/></linearGradient>
+              </defs>
+            </svg>
+            <!-- Envelope icon -->
+            <div class="ca-envelope">
+              <svg viewBox="0 0 80 60" fill="none">
+                <rect x="2" y="2" width="76" height="56" rx="6" stroke="#4d9ffc" stroke-width="3"/>
+                <polyline points="2,2 40,34 78,2" stroke="#4d9ffc" stroke-width="3" fill="none"/>
+                <!-- Speed lines -->
+                <line x1="-18" y1="28" x2="-4" y2="28" stroke="#f5a623" stroke-width="3" stroke-linecap="round" class="ca-speed-l1"/>
+                <line x1="-22" y1="20" x2="-6" y2="20" stroke="#f5a623" stroke-width="2" stroke-linecap="round" class="ca-speed-l2"/>
+                <line x1="-22" y1="36" x2="-6" y2="36" stroke="#f5a623" stroke-width="2" stroke-linecap="round" class="ca-speed-l3"/>
+              </svg>
+            </div>
+          </div>
+
+          <p id="ca-status-msg" class="ca-status-msg">Enviando mensaje...</p>
+          <p id="ca-status-sub" class="ca-status-sub">Por favor espera unos segundos</p>
+
+          <!-- Dots -->
+          <div class="ca-dots">
+            <span class="ca-dot active" id="ca-dot-1"></span>
+            <span class="ca-dot" id="ca-dot-2"></span>
+            <span class="ca-dot" id="ca-dot-3"></span>
+          </div>
+
+          <!-- Cancel / success btn bottom right -->
+          <button id="ca-cancel-sending" class="ca-cancel-pill">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <div>
+              <strong>Cancelar</strong>
+              <span>Volver al inicio de sesión</span>
+            </div>
+          </button>
         </div>
       </div>
     </div>
@@ -408,7 +606,21 @@
         </p>
 
         <nav class="sb-nav">
-          <button class="nav-btn active" data-view="erb" id="nav-erb">
+          <button class="nav-btn" data-view="home" id="nav-home">
+            <span class="nav-icon">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+              >
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                <polyline points="9 22 9 12 15 12 15 22"/>
+              </svg>
+            </span>
+            <span data-i18n="Inicio">Inicio</span>
+          </button>
+          <button class="nav-btn" data-view="erb" id="nav-erb">
             <span class="nav-icon erb-icon">
               <svg
                 viewBox="0 0 24 24"
@@ -515,6 +727,7 @@
             </svg>
           </button>
           <div class="topbar-title-group">
+            <span class="topbar-welcome hidden" id="topbar-welcome" data-i18n="Bienvenido">Bienvenido</span>
             <span class="topbar-title" id="topbar-title">E.R.B</span>
             <span class="topbar-sub" id="topbar-sub"
               >Estaciones de Recolección y Bombeo</span
@@ -549,87 +762,198 @@
           <!-- ── HOME VIEW ── -->
           <div id="view-home" class="view home-view">
             <div class="home-container">
-              <!-- Center Logo and Tagline -->
-              <div class="home-hero">
-                <span class="home-logo-svg">
-                  <svg viewBox="0 0 44 58" fill="none">
-                    <path d="M22 2C22 2 3 24 3 37C3 48.05 11.51 57 22 57C32.49 57 41 48.05 41 37C41 24 22 2 22 2Z" fill="url(#lgHome)" />
-                    <defs>
-                      <linearGradient id="lgHome" x1="22" y1="2" x2="22" y2="57" gradientUnits="userSpaceOnUse">
-                        <stop stop-color="#FFB800" />
-                        <stop offset="1" stop-color="#FF6B00" />
-                      </linearGradient>
-                    </defs>
-                  </svg>
-                </span>
-                <h1 class="home-title">Tel<span class="gold">Net</span></h1>
-                <p class="home-subtitle" data-i18n="Monitoreo en tiempo real de operaciones y mantenimiento">Monitoreo en tiempo real de operaciones y mantenimiento</p>
+              
+              <!-- Hero Split Layout -->
+              <div class="home-hero-split">
+                <!-- Left Hero Panel -->
+                <div class="home-hero-left">
+                  <h1 class="hero-accent-title">
+                    <div>Monitorea.</div>
+                    <div class="gold">Analiza.</div>
+                    <div>Optimiza.</div>
+                  </h1>
+                  <p class="hero-desc" data-i18n="Plataforma inteligente para el monitoreo en tiempo real de estaciones y pozos, con datos precisos para decisiones más eficientes.">
+                    Plataforma inteligente para el monitoreo en tiempo real de estaciones y pozos, con datos precisos para decisiones más eficientes.
+                  </p>
+                  
+                  <!-- Three Value Badges -->
+                  <div class="hero-badges">
+                    <div class="hero-badge">
+                      <span class="badge-icon gold">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                        </svg>
+                      </span>
+                      <div class="badge-content">
+                        <strong data-i18n="Tiempo real">Tiempo real</strong>
+                        <span data-i18n="Datos actualizados al instante">Datos actualizados al instante</span>
+                      </div>
+                    </div>
+                    
+                    <div class="hero-badge">
+                      <span class="badge-icon blue">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                        </svg>
+                      </span>
+                      <div class="badge-content">
+                        <strong data-i18n="Confiable">Confiable</strong>
+                        <span data-i18n="Información precisa y segura">Información precisa y segura</span>
+                      </div>
+                    </div>
+                    
+                    <div class="hero-badge">
+                      <span class="badge-icon purple">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <line x1="18" y1="20" x2="18" y2="10" />
+                          <line x1="12" y1="20" x2="12" y2="4" />
+                          <line x1="6" y1="20" x2="6" y2="14" />
+                        </svg>
+                      </span>
+                      <div class="badge-content">
+                        <strong data-i18n="Eficiente">Eficiente</strong>
+                        <span data-i18n="Decisiones basadas en datos">Decisiones basadas en datos</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- Right Hero Panel (Logo and Subtitle) -->
+                <div class="home-hero-right">
+                  <span class="home-logo-svg">
+                    <svg viewBox="0 0 44 58" fill="none">
+                      <path d="M22 2C22 2 3 24 3 37C3 48.05 11.51 57 22 57C32.49 57 41 48.05 41 37C41 24 22 2 22 2Z" fill="url(#lgHome)" />
+                      <defs>
+                        <linearGradient id="lgHome" x1="22" y1="2" x2="22" y2="57" gradientUnits="userSpaceOnUse">
+                          <stop stop-color="#FFB800" />
+                          <stop offset="1" stop-color="#FF6B00" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                  </span>
+                  <h1 class="home-title">Tel<span class="gold">Net</span></h1>
+                  <p class="home-subtitle" data-i18n="Monitoreo en tiempo real de operaciones y mantenimiento">Monitoreo en tiempo real de operaciones y mantenimiento</p>
+                </div>
               </div>
 
               <!-- Two Main Navigation Cards -->
               <div class="home-cards">
                 <!-- E.R.B Card -->
                 <div class="home-card card-erb" onclick="navigate('erb')">
-                  <div class="home-card-icon-wrap">
-                    <svg viewBox="0 0 100 100" class="svg-erb-tank">
-                      <rect x="25" y="30" width="50" height="50" rx="3" ry="3" fill="none" stroke="#4d9ffc" stroke-width="2.5" />
-                      <ellipse cx="50" cy="30" rx="25" ry="8" fill="none" stroke="#4d9ffc" stroke-width="2.5" />
-                      <ellipse cx="50" cy="80" rx="25" ry="8" fill="none" stroke="#4d9ffc" stroke-dasharray="3,3" stroke-width="1.5" />
-                      <line x1="25" y1="30" x2="25" y2="80" stroke="#4d9ffc" stroke-width="2.5" />
-                      <line x1="75" y1="30" x2="75" y2="80" stroke="#4d9ffc" stroke-width="2.5" />
-                      <path d="M25,55 C35,50 45,60 55,55 C65,50 70,55 75,52" fill="none" stroke="rgba(77,159,252,0.6)" stroke-width="2" />
-                      <line x1="20" y1="40" x2="20" y2="80" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
-                      <line x1="16" y1="40" x2="16" y2="80" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
-                      <line x1="16" y1="48" x2="20" y2="48" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
-                      <line x1="16" y1="56" x2="20" y2="56" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
-                      <line x1="16" y1="64" x2="20" y2="64" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
-                      <line x1="16" y1="72" x2="20" y2="72" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
-                    </svg>
+                  <div class="home-card-inner">
+                    <div class="home-card-icon-wrap">
+                      <svg viewBox="0 0 100 100" class="svg-erb-tank">
+                        <rect x="25" y="30" width="50" height="50" rx="3" ry="3" fill="none" stroke="#4d9ffc" stroke-width="2.5" />
+                        <ellipse cx="50" cy="30" rx="25" ry="8" fill="none" stroke="#4d9ffc" stroke-width="2.5" />
+                        <ellipse cx="50" cy="80" rx="25" ry="8" fill="none" stroke="#4d9ffc" stroke-dasharray="3,3" stroke-width="1.5" />
+                        <line x1="25" y1="30" x2="25" y2="80" stroke="#4d9ffc" stroke-width="2.5" />
+                        <line x1="75" y1="30" x2="75" y2="80" stroke="#4d9ffc" stroke-width="2.5" />
+                        <path d="M25,55 C35,50 45,60 55,55 C65,50 70,55 75,52" fill="none" stroke="rgba(77,159,252,0.6)" stroke-width="2" />
+                        <line x1="20" y1="40" x2="20" y2="80" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
+                        <line x1="16" y1="40" x2="16" y2="80" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
+                        <line x1="16" y1="48" x2="20" y2="48" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
+                        <line x1="16" y1="56" x2="20" y2="56" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
+                        <line x1="16" y1="64" x2="20" y2="64" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
+                        <line x1="16" y1="72" x2="20" y2="72" stroke="rgba(77,159,252,0.5)" stroke-width="1.5" />
+                      </svg>
+                    </div>
+                    <div class="home-card-text">
+                      <h3 class="home-card-title">E.R.B</h3>
+                      <p class="home-card-desc" data-i18n="Monitoreo de niveles en estaciones de recolección y bombeo.">Monitoreo de niveles en estaciones de recolección y bombeo.</p>
+                    </div>
+                    <button class="home-card-btn btn-erb-nav">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+                    </button>
                   </div>
-                  <h3 class="home-card-title">E.R.B</h3>
-                  <p class="home-card-desc" data-i18n="Monitoreo de niveles en estaciones de recolección y bombeo.">Monitoreo de niveles en estaciones de recolección y bombeo.</p>
-                  <button class="home-card-btn btn-erb-nav">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
-                  </button>
                 </div>
 
                 <!-- Pozos Card -->
                 <div class="home-card card-pozos" onclick="navigate('pozos')">
-                  <div class="home-card-icon-wrap">
-                    <svg viewBox="0 0 100 100" class="svg-pozos-pumpjack">
-                      <line x1="10" y1="85" x2="90" y2="85" stroke="#2ecc71" stroke-width="2.5" />
-                      <line x1="50" y1="40" x2="35" y2="85" stroke="#2ecc71" stroke-width="2.5" />
-                      <line x1="50" y1="40" x2="65" y2="85" stroke="#2ecc71" stroke-width="2.5" />
-                      <line x1="43" y1="60" x2="57" y2="60" stroke="#2ecc71" stroke-width="1.5" />
-                      <line x1="25" y1="40" x2="75" y2="40" stroke="#2ecc71" stroke-width="3" />
-                      <path d="M75,30 C80,33 82,37 80,45 C78,48 76,49 74,48 Z" fill="none" stroke="#2ecc71" stroke-width="2.5" />
-                      <line x1="28" y1="40" x2="28" y2="70" stroke="#2ecc71" stroke-width="2" />
-                      <circle cx="28" cy="70" r="8" fill="none" stroke="#2ecc71" stroke-width="2" />
-                      <line x1="78" y1="45" x2="78" y2="85" stroke="#2ecc71" stroke-width="2" />
-                    </svg>
+                  <div class="home-card-inner">
+                    <div class="home-card-icon-wrap">
+                      <svg viewBox="0 0 100 100" class="svg-pozos-pumpjack">
+                        <line x1="10" y1="85" x2="90" y2="85" stroke="#2ecc71" stroke-width="2.5" />
+                        <line x1="50" y1="40" x2="35" y2="85" stroke="#2ecc71" stroke-width="2.5" />
+                        <line x1="50" y1="40" x2="65" y2="85" stroke="#2ecc71" stroke-width="2.5" />
+                        <line x1="43" y1="60" x2="57" y2="60" stroke="#2ecc71" stroke-width="1.5" />
+                        <line x1="25" y1="40" x2="75" y2="40" stroke="#2ecc71" stroke-width="3" />
+                        <path d="M75,30 C80,33 82,37 80,45 C78,48 76,49 74,48 Z" fill="none" stroke="#2ecc71" stroke-width="2.5" />
+                        <line x1="28" y1="40" x2="28" y2="70" stroke="#2ecc71" stroke-width="2" />
+                        <circle cx="28" cy="70" r="8" fill="none" stroke="#2ecc71" stroke-width="2" />
+                        <line x1="78" y1="45" x2="78" y2="85" stroke="#2ecc71" stroke-width="2" />
+                      </svg>
+                    </div>
+                    <div class="home-card-text">
+                      <h3 class="home-card-title" data-i18n="Pozos">Pozos</h3>
+                      <p class="home-card-desc" data-i18n="Telemetría y monitoreo de pozos en tiempo real.">Telemetría y monitoreo de pozos en tiempo real.</p>
+                    </div>
+                    <button class="home-card-btn btn-pozos-nav">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
+                    </button>
                   </div>
-                  <h3 class="home-card-title" data-i18n="Pozos">Pozos</h3>
-                  <p class="home-card-desc" data-i18n="Telemetría y monitoreo de pozos en tiempo real.">Telemetría y monitoreo de pozos en tiempo real.</p>
-                  <button class="home-card-btn btn-pozos-nav">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12" /><polyline points="12 5 19 12 12 19" /></svg>
-                  </button>
                 </div>
               </div>
 
-              <!-- Status Card -->
-              <div class="home-status-card">
-                <span class="home-status-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/>
-                    <path d="M12 6a6 6 0 1 0 6 6 6 6 0 0 0-6-6zm0 10a4 4 0 1 1 4-4 4 4 0 0 1-4 4z"/>
-                    <circle cx="12" cy="12" r="1.5"/>
-                  </svg>
-                </span>
-                <div class="home-status-text">
-                  <strong data-i18n="Sistema listo para monitoreo">Sistema listo para monitoreo</strong>
-                  <span data-i18n="Conectado y sincronizado">Conectado y sincronizado</span>
+              <!-- Bottom Status Bar -->
+              <div class="home-dashboard-status">
+                <!-- Status 1 -->
+                <div class="status-col">
+                  <span class="status-col-icon green">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 20h.01" />
+                      <path d="M8.5 16.5a5 5 0 0 1 7 0" />
+                      <path d="M5 13a10 10 0 0 1 14 0" />
+                    </svg>
+                  </span>
+                  <div class="status-col-info">
+                    <strong data-i18n="Sistema listo para monitoreo">Sistema listo para monitoreo</strong>
+                    <span data-i18n="Conectado y sincronizado">Conectado y sincronizado</span>
+                    <span class="status-pill green" data-i18n="Operativo">Operativo</span>
+                  </div>
+                </div>
+                <!-- Status 2 -->
+                <div class="status-col">
+                  <span class="status-col-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                      <line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/>
+                      <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                  </span>
+                  <div class="status-col-info">
+                    <strong data-i18n="Última actualización">Última actualización</strong>
+                    <span id="home-last-update" data-i18n="Cargando...">Cargando...</span>
+                  </div>
+                </div>
+                <!-- Status 3 -->
+                <div class="status-col">
+                  <span class="status-col-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                      <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                      <line x1="12" y1="22.08" x2="12" y2="12"/>
+                    </svg>
+                  </span>
+                  <div class="status-col-info">
+                    <strong data-i18n="Dispositivos conectados">Dispositivos conectados</strong>
+                    <span id="home-devices-count" data-i18n="Cargando...">Cargando...</span>
+                  </div>
+                </div>
+                <!-- Status 4 -->
+                <div class="status-col">
+                  <span class="status-col-icon green-check">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                  </span>
+                  <div class="status-col-info">
+                    <strong data-i18n="Estado del sistema">Estado del sistema</strong>
+                    <span data-i18n="Todo funcionando correctamente">Todo funcionando correctamente</span>
+                  </div>
                 </div>
               </div>
+
             </div>
           </div>
 

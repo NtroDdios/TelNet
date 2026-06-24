@@ -293,6 +293,13 @@ const TRANSLATIONS = {
       "The production system and generator operate stably. Electrical parameters (voltage, frequency and RPM) are within normal ranges.\nIt is recommended to continue monitoring Torque and Current.",
     "Se detectaron variaciones en: {fields}. Se recomienda revision preventiva de los equipos afectados y continuar el monitoreo intensivo.":
       "Variations detected in: {fields}. Preventive maintenance is recommended for affected equipment, and close monitoring should continue.",
+    // Home view stats
+    activos: "active",
+    total: "total",
+    Hace: "ago",
+    Hoy: "Today",
+    "Sin datos": "No data",
+    "Hace un momento": "Just now",
   },
   zh: {
     "E.R.B": "E.R.B",
@@ -476,6 +483,13 @@ const TRANSLATIONS = {
       "生产系统和发电机运行稳定。电气参数（电压、频率和转速）均在正常范围内。\n建议继续监测扭矩和电流。",
     "Se detectaron variaciones en: {fields}. Se recomienda revision preventiva de los equipos afectados y continuar el monitoreo intensivo.":
       "检测到以下参数的变化：{fields}。建议对受影响设备进行预防性检修，并继续加强监测。",
+    // Home view stats
+    activos: "活跃",
+    total: "总计",
+    Hace: "前",
+    Hoy: "今天",
+    "Sin datos": "无数据",
+    "Hace un momento": "刚刚",
   },
 };
 
@@ -612,36 +626,36 @@ let CURRENT_USER = null;
 
 // ⚠ COLOCA AQUÍ LA URL de tu Apps Script desplegado:
 // Extensions > Apps Script > Deploy > Web App > "Anyone" > Copy URL
-const ACCESS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzvORT5f8pyrca71o73mCE8xakID5ZaIyVcI5ioYRX1rRc4sXN2wQj_wD_3MYbdp2oC/exec";
-window.ACCESS_SCRIPT_URL = ACCESS_SCRIPT_URL;
+const ACCESS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbzvORT5f8pyrca71o73mCE8xakID5ZaIyVcI5ioYRX1rRc4sXN2wQj_wD_3MYbdp2oC/exec";
 
-const ACCESS_HISTORY_KEY  = "tn_access_history";    // localStorage cache key
-const ACCESS_COOLDOWN_KEY = "tn_access_cooldown";   // timestamp of last log
-const ACCESS_LOG_COOLDOWN = 5 * 60 * 1000;          // 5 min between logs per device
+const ACCESS_HISTORY_KEY = "tn_access_history"; // localStorage cache key
+const ACCESS_COOLDOWN_KEY = "tn_access_cooldown"; // timestamp of last log
+const ACCESS_LOG_COOLDOWN = 5 * 60 * 1000; // 5 min between logs per device
 
 function parseUA(ua) {
   let browser = "Desconocido";
-  let os      = "Desconocido";
+  let os = "Desconocido";
 
-  if (ua.includes("Edg/"))                             browser = "Edge";
+  if (ua.includes("Edg/")) browser = "Edge";
   else if (ua.includes("OPR/") || ua.includes("Opera")) browser = "Opera";
-  else if (ua.includes("Chrome/"))                     browser = "Chrome";
+  else if (ua.includes("Chrome/")) browser = "Chrome";
   else if (ua.includes("Safari/") && !ua.includes("Chrome")) browser = "Safari";
-  else if (ua.includes("Firefox/"))                    browser = "Firefox";
+  else if (ua.includes("Firefox/")) browser = "Firefox";
   else if (ua.includes("MSIE") || ua.includes("Trident")) browser = "IE";
 
-  if      (ua.includes("Windows NT 10")) os = "Windows 10/11";
+  if (ua.includes("Windows NT 10")) os = "Windows 10/11";
   else if (ua.includes("Windows NT 6.3")) os = "Windows 8.1";
-  else if (ua.includes("Windows"))        os = "Windows";
-  else if (ua.includes("iPhone"))         os = "iPhone (iOS)";
-  else if (ua.includes("iPad"))           os = "iPad (iPadOS)";
+  else if (ua.includes("Windows")) os = "Windows";
+  else if (ua.includes("iPhone")) os = "iPhone (iOS)";
+  else if (ua.includes("iPad")) os = "iPad (iPadOS)";
   else if (ua.includes("Android")) {
     const m = ua.match(/Android ([0-9.]+)/);
     os = m ? `Android ${m[1]}` : "Android";
-  } else if (ua.includes("Mac OS X"))    os = "macOS";
-  else if (ua.includes("Linux"))         os = "Linux";
+  } else if (ua.includes("Mac OS X")) os = "macOS";
+  else if (ua.includes("Linux")) os = "Linux";
 
-  const isMobile  = /Mobi|Android|iPhone|iPad/i.test(ua);
+  const isMobile = /Mobi|Android|iPhone|iPad/i.test(ua);
   const deviceType = isMobile ? "📱 Móvil" : "💻 Escritorio";
   return { browser, os, deviceType };
 }
@@ -649,7 +663,7 @@ function parseUA(ua) {
 async function logAccessEvent(user) {
   // Cooldown: skip duplicate entries within 5 min on same device
   const lastTs = parseInt(localStorage.getItem(ACCESS_COOLDOWN_KEY) || "0", 10);
-  const now    = Date.now();
+  const now = Date.now();
   if (now - lastTs < ACCESS_LOG_COOLDOWN) return;
   localStorage.setItem(ACCESS_COOLDOWN_KEY, String(now));
 
@@ -657,25 +671,29 @@ async function logAccessEvent(user) {
   const { browser, os, deviceType } = parseUA(ua);
 
   const entry = {
-    ts:          now,
-    usuario:     user.nombre  || "",
-    correo:      user.correo  || "",
-    rol:         user.rol     || "",
+    ts: now,
+    usuario: user.nombre || "",
+    correo: user.correo || "",
+    rol: user.rol || "",
     dispositivo: `${deviceType} · ${browser}`,
-    os:          os,
-    ip:          "",
-    ubicacion:   "",
+    os: os,
+    ip: "",
+    ubicacion: "",
   };
 
   // Fetch geolocation async then POST to Apps Script
   try {
     const geoRes = await fetch("https://ipapi.co/json/", { cache: "no-store" });
     if (geoRes.ok) {
-      const geo    = await geoRes.json();
-      entry.ip        = geo.ip || "";
-      entry.ubicacion = [geo.city, geo.region, geo.country_name].filter(Boolean).join(", ") || "";
+      const geo = await geoRes.json();
+      entry.ip = geo.ip || "";
+      entry.ubicacion =
+        [geo.city, geo.region, geo.country_name].filter(Boolean).join(", ") ||
+        "";
     }
-  } catch (_) { /* no geo */ }
+  } catch (_) {
+    /* no geo */
+  }
 
   // POST to Google Apps Script (non-blocking)
   if (ACCESS_SCRIPT_URL && ACCESS_SCRIPT_URL !== "APPS_SCRIPT_URL_AQUI") {
@@ -683,7 +701,7 @@ async function logAccessEvent(user) {
       method: "POST",
       headers: { "Content-Type": "text/plain" },
       body: JSON.stringify(entry),
-      mode: "no-cors"          // Apps Script requires no-cors
+      mode: "no-cors", // Apps Script requires no-cors
     }).catch(() => {});
   }
 
@@ -697,10 +715,18 @@ async function logAccessEvent(user) {
 
 /* ── build row HTML ── */
 function _ahRow(e) {
-  const d     = new Date(e.ts);
-  const fecha = d.toLocaleDateString("es-MX",  { day: "2-digit", month: "2-digit", year: "numeric" });
-  const hora  = d.toLocaleTimeString("es-MX",  { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  const ok    = (v) => v && v !== "Obteniendo..." && v !== "Sin datos" && v !== "";
+  const d = new Date(e.ts);
+  const fecha = d.toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const hora = d.toLocaleTimeString("es-MX", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const ok = (v) => v && v !== "Obteniendo..." && v !== "Sin datos" && v !== "";
   const ubicHtml = ok(e.ubicacion)
     ? `<span style="color:var(--green)">${e.ubicacion}</span>`
     : `<span style="color:var(--txt3)">${e.ubicacion || "—"}</span>`;
@@ -766,7 +792,7 @@ window.openAccessHistoryModal = async function () {
   let modal = el("access-history-modal");
   if (!modal) {
     modal = document.createElement("div");
-    modal.id        = "access-history-modal";
+    modal.id = "access-history-modal";
     modal.className = "modal-overlay";
     document.body.appendChild(modal);
   }
@@ -776,10 +802,17 @@ window.openAccessHistoryModal = async function () {
 
   // Wire close handlers
   const closeModal = () => modal.classList.add("hidden");
-  el("ah-close-btn").onclick  = closeModal;
+  el("ah-close-btn").onclick = closeModal;
   el("ah-close-btn2").onclick = closeModal;
-  modal.onclick = (ev) => { if (ev.target === modal) closeModal(); };
-  const ahEsc = (ev) => { if (ev.key === "Escape") { closeModal(); document.removeEventListener("keydown", ahEsc); } };
+  modal.onclick = (ev) => {
+    if (ev.target === modal) closeModal();
+  };
+  const ahEsc = (ev) => {
+    if (ev.key === "Escape") {
+      closeModal();
+      document.removeEventListener("keydown", ahEsc);
+    }
+  };
   document.addEventListener("keydown", ahEsc);
 
   // Try to load from Apps Script (cloud), fall back to localStorage
@@ -790,10 +823,12 @@ window.openAccessHistoryModal = async function () {
     try {
       const res = await fetch(ACCESS_SCRIPT_URL, { cache: "no-store" });
       if (res.ok) {
-        logs   = await res.json();
+        logs = await res.json();
         source = "cloud";
       }
-    } catch (_) { /* fall through */ }
+    } catch (_) {
+      /* fall through */
+    }
   }
 
   // Fallback: localStorage
@@ -801,12 +836,14 @@ window.openAccessHistoryModal = async function () {
     try {
       logs = JSON.parse(localStorage.getItem(ACCESS_HISTORY_KEY) || "[]");
       logs.sort((a, b) => (b.ts || 0) - (a.ts || 0));
-    } catch (_) { logs = []; }
+    } catch (_) {
+      logs = [];
+    }
   }
 
-  const tbody    = el("ah-tbody");
+  const tbody = el("ah-tbody");
   const subtitle = el("ah-subtitle");
-  const countEl  = el("ah-count");
+  const countEl = el("ah-count");
 
   if (!tbody) return;
 
@@ -816,14 +853,14 @@ window.openAccessHistoryModal = async function () {
     tbody.innerHTML = logs.map(_ahRow).join("");
   }
 
-  const srcLabel = source === "cloud"
-    ? "📡 Todos los dispositivos · Google Sheets"
-    : "⚠ Solo este dispositivo (Apps Script no configurado)";
+  const srcLabel =
+    source === "cloud"
+      ? "📡 Todos los dispositivos · Google Sheets"
+      : "⚠ Solo este dispositivo (Apps Script no configurado)";
   if (subtitle) subtitle.textContent = srcLabel;
-  if (countEl)  countEl.textContent  = `${logs.length} registro${logs.length !== 1 ? "s" : ""}`;
+  if (countEl)
+    countEl.textContent = `${logs.length} registro${logs.length !== 1 ? "s" : ""}`;
 };
-
-
 
 /* ═══════════════════════════════════════════════
    TELNET – SPA CONTROLLER  (app.js)
@@ -1037,6 +1074,11 @@ function navigate(view, params = {}) {
     if (el_) el_.classList.toggle("hidden", v !== view);
   });
 
+  const welcomeEl = el("topbar-welcome");
+  if (welcomeEl) {
+    welcomeEl.classList.toggle("hidden", view !== "home");
+  }
+
   // Update breadcrumb in topbar
   const info = TOPBAR_INFO[view] || { title: view, sub: "" };
   if (view === "erb-detail" && params.nombre) {
@@ -1072,6 +1114,98 @@ function navigate(view, params = {}) {
 
 function on(view, fn) {
   _handlers[view] = fn;
+}
+
+/* ──────────────────────────────────────────────
+   VIEW: HOME
+────────────────────────────────────────────── */
+on("home", async () => {
+  // Load data in background (don't block the view)
+  Promise.all([
+    DB.loadERB().catch(() => {}),
+    DB.loadPozos().catch(() => {}),
+  ]).then(() => {
+    updateHomeStats();
+  });
+
+  // Show whatever is cached immediately while fresh data loads
+  updateHomeStats();
+});
+
+function updateHomeStats() {
+  const lastUpdateEl = document.getElementById("home-last-update");
+  const devicesEl = document.getElementById("home-devices-count");
+  if (!lastUpdateEl || !devicesEl) return;
+
+  // ── Dispositivos conectados ──
+  // Count unique active pozos + ERB stations
+  const pozos = DB.getPozos();
+  const estaciones = DB.getEstaciones();
+  const activePozos = pozos.filter((p) => p.estado === "online").length;
+  const activeERB = estaciones.filter(
+    (e) => e.estado === "online" || e.estado === "warning"
+  ).length;
+  const totalActive = activePozos + activeERB;
+  const totalAll = pozos.length + estaciones.length;
+
+  if (totalAll === 0) {
+    devicesEl.textContent = _t("Sin datos");
+  } else {
+    devicesEl.textContent = `${totalActive} ${_t("activos")} / ${totalAll} ${_t("total")}`;
+  }
+
+  // ── Última actualización ──
+  // Pick the most recent timestamp from ERB or Pozos
+  let latestDate = null;
+
+  const latestERB = DB.getLatestERB();
+  if (latestERB && latestERB.ts) {
+    const d = new Date(latestERB.ts.replace(" ", "T"));
+    if (!isNaN(d.getTime())) latestDate = d;
+  }
+
+  pozos.forEach((p) => {
+    if (p.ts) {
+      const d = new Date(p.ts.replace(" ", "T"));
+      if (!isNaN(d.getTime()) && (!latestDate || d > latestDate)) {
+        latestDate = d;
+      }
+    }
+  });
+
+  if (!latestDate) {
+    lastUpdateEl.textContent = _t("Sin datos");
+  } else {
+    const now = new Date();
+    const diffMs = now - latestDate;
+    const diffMin = Math.floor(diffMs / 60000);
+
+    let timeStr;
+    if (diffMin < 1) {
+      timeStr = _t("Hace un momento");
+    } else if (diffMin < 60) {
+      timeStr = `${_t("Hace")} ${diffMin} min`;
+    } else {
+      // Format: "Hoy, 14:32" or "24 Jun, 14:32"
+      const isToday =
+        latestDate.getDate() === now.getDate() &&
+        latestDate.getMonth() === now.getMonth() &&
+        latestDate.getFullYear() === now.getFullYear();
+      const hh = String(latestDate.getHours()).padStart(2, "0");
+      const mm = String(latestDate.getMinutes()).padStart(2, "0");
+      if (isToday) {
+        timeStr = `${_t("Hoy")}, ${hh}:${mm}`;
+      } else {
+        const day = latestDate.getDate();
+        const months = [
+          "Ene","Feb","Mar","Abr","May","Jun",
+          "Jul","Ago","Sep","Oct","Nov","Dic",
+        ];
+        timeStr = `${day} ${months[latestDate.getMonth()]}, ${hh}:${mm}`;
+      }
+    }
+    lastUpdateEl.textContent = timeStr;
+  }
 }
 
 /* ──────────────────────────────────────────────
@@ -2495,24 +2629,34 @@ async function init() {
     const savedUser = JSON.parse(localStorage.getItem("tn_logged_user"));
     if (savedUser) {
       CURRENT_USER = savedUser;
+      const firstLetter = savedUser.nombre.charAt(0).toUpperCase();
+      const firstName = savedUser.nombre.split(" ")[0];
       el("topbar-user").innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-        <span>${savedUser.nombre.split(" ")[0]}</span>
+        <span class="user-avatar">${firstLetter}</span>
+        <span class="user-name">${firstName}</span>
+        <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
       `;
       el("view-login").style.display = "none";
       el("app").classList.remove("hidden");
 
-      DB.loadUsuarios().then((users) => {
-        const latestUser = users.find(u => u.correo.toLowerCase() === savedUser.correo.toLowerCase());
-        if (latestUser) {
-          CURRENT_USER = latestUser;
-          localStorage.setItem("tn_logged_user", JSON.stringify(latestUser));
-          el("topbar-user").innerHTML = `
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            <span>${latestUser.nombre.split(" ")[0]}</span>
-          `;
-        }
-      }).catch(console.warn);
+      DB.loadUsuarios()
+        .then((users) => {
+          const latestUser = users.find(
+            (u) => u.correo.toLowerCase() === savedUser.correo.toLowerCase(),
+          );
+          if (latestUser) {
+            CURRENT_USER = latestUser;
+            localStorage.setItem("tn_logged_user", JSON.stringify(latestUser));
+            const firstLetter = latestUser.nombre.charAt(0).toUpperCase();
+            const firstName = latestUser.nombre.split(" ")[0];
+            el("topbar-user").innerHTML = `
+              <span class="user-avatar">${firstLetter}</span>
+              <span class="user-name">${firstName}</span>
+              <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+            `;
+          }
+        })
+        .catch(console.warn);
 
       Promise.all([DB.loadCoords(), DB.loadERB(), DB.loadPozos()]).catch(
         console.warn,
@@ -2559,7 +2703,7 @@ async function init() {
     if (prevErr) prevErr.remove();
 
     const showErr = (msg) => {
-      btn.textContent = "Iniciar sesión";
+      btn.innerHTML = `<span data-i18n="Iniciar sesión">Iniciar sesión</span><span class="btn-arrow">&nbsp;→</span>`;
       btn.disabled = false;
       btn.insertAdjacentHTML(
         "afterend",
@@ -2639,9 +2783,12 @@ async function init() {
       console.error("[Session] Error saving user session:", e);
     }
 
+    const firstLetter = user.nombre.charAt(0).toUpperCase();
+    const firstName = user.nombre.split(" ")[0];
     el("topbar-user").innerHTML = `
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-      <span>${user.nombre.split(" ")[0]}</span>
+      <span class="user-avatar">${firstLetter}</span>
+      <span class="user-name">${firstName}</span>
+      <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
     `;
 
     el("view-login").style.display = "none";
@@ -2662,6 +2809,147 @@ async function init() {
   el("l-email").addEventListener("keydown", (e) => {
     if (e.key === "Enter") el("l-pass").focus();
   });
+
+  /* ══════════════════════════════════════════════
+     CONTACT ADMIN OVERLAY LOGIC
+  ══════════════════════════════════════════════ */
+  const caOverlay = el("contact-admin-overlay");
+  const caLink = el("contact-admin-link");
+  const caCancelForm = el("ca-cancel-form");
+  const caSubmitBtn = el("ca-submit-btn");
+  const caCancelSending = el("ca-cancel-sending");
+  
+  let caTimeout1 = null;
+  let caTimeout2 = null;
+  let caTimeout3 = null;
+
+  function closeCaOverlay() {
+    if (caOverlay) {
+      caOverlay.classList.add("hidden");
+    }
+    clearTimeout(caTimeout1);
+    clearTimeout(caTimeout2);
+    clearTimeout(caTimeout3);
+  }
+
+  if (caLink && caOverlay) {
+    caLink.onclick = (e) => {
+      e.preventDefault();
+      caOverlay.classList.remove("hidden");
+      el("ca-step-form").classList.remove("hidden");
+      el("ca-step-sending").classList.add("hidden");
+      
+      el("ca-nombre").value = "";
+      el("ca-correo").value = "";
+      el("ca-mensaje").value = "";
+      
+      const err = el("ca-form-err");
+      if (err) {
+        err.classList.add("hidden");
+        err.textContent = "";
+      }
+    };
+  }
+
+  if (caCancelForm) {
+    caCancelForm.onclick = (e) => {
+      e.preventDefault();
+      closeCaOverlay();
+    };
+  }
+
+  if (caCancelSending) {
+    caCancelSending.onclick = (e) => {
+      e.preventDefault();
+      closeCaOverlay();
+    };
+  }
+
+  if (caSubmitBtn) {
+    caSubmitBtn.onclick = (e) => {
+      e.preventDefault();
+      const nombre = el("ca-nombre").value.trim();
+      const correo = el("ca-correo").value.trim();
+      const mensaje = el("ca-mensaje").value.trim();
+      const errEl = el("ca-form-err");
+
+      if (!nombre || !correo || !mensaje) {
+        if (errEl) {
+          errEl.textContent = SETTINGS.idioma === "en" 
+            ? "Please fill in all fields." 
+            : SETTINGS.idioma === "zh" 
+              ? "请填写所有字段。" 
+              : "Por favor, complete todos los campos.";
+          errEl.classList.remove("hidden");
+        }
+        return;
+      }
+
+      if (errEl) errEl.classList.add("hidden");
+
+      el("ca-step-form").classList.add("hidden");
+      el("ca-step-sending").classList.remove("hidden");
+
+      const st1 = el("ca-st-1");
+      const st2 = el("ca-st-2");
+      const st3 = el("ca-st-3");
+      
+      st1.className = "ca-step-item active";
+      st1.querySelector(".ca-step-icon").className = "ca-step-icon blue";
+      
+      st2.className = "ca-step-item";
+      st2.querySelector(".ca-step-icon").className = "ca-step-icon";
+      
+      st3.className = "ca-step-item";
+      st3.querySelector(".ca-step-icon").className = "ca-step-icon";
+
+      el("ca-status-msg").textContent = SETTINGS.idioma === "en" ? "Sending message..." : "Enviando mensaje...";
+      el("ca-status-sub").textContent = SETTINGS.idioma === "en" ? "Please wait a few seconds" : "Por favor espera unos segundos";
+      
+      el("ca-dot-1").className = "ca-dot active";
+      el("ca-dot-2").className = "ca-dot";
+      el("ca-dot-3").className = "ca-dot";
+
+      caTimeout1 = setTimeout(() => {
+        st1.className = "ca-step-item done";
+        st2.className = "ca-step-item active";
+        st2.querySelector(".ca-step-icon").className = "ca-step-icon blue";
+
+        el("ca-status-msg").textContent = SETTINGS.idioma === "en" ? "Awaiting admin receipt..." : "En espera de recepción...";
+        el("ca-dot-1").className = "ca-dot";
+        el("ca-dot-2").className = "ca-dot active";
+      }, 1500);
+
+      caTimeout2 = setTimeout(() => {
+        st2.className = "ca-step-item done";
+        st3.className = "ca-step-item active";
+        st3.querySelector(".ca-step-icon").className = "ca-step-icon blue";
+
+        el("ca-status-msg").textContent = SETTINGS.idioma === "en" ? "Request sent!" : "¡Solicitud enviada!";
+        el("ca-status-sub").textContent = SETTINGS.idioma === "en" ? "Opening mail client..." : "Abriendo cliente de correo...";
+        el("ca-dot-2").className = "ca-dot";
+        el("ca-dot-3").className = "ca-dot active";
+      }, 3000);
+
+      caTimeout3 = setTimeout(() => {
+        const subject = encodeURIComponent("Solicitud de Acceso TelNet - " + nombre);
+        const body = encodeURIComponent(
+          "Hola Alfredo,\n\n" +
+          "Solicito acceso al sistema TelNet.\n\n" +
+          "Detalles de contacto:\n" +
+          "Nombre: " + nombre + "\n" +
+          "Correo: " + correo + "\n\n" +
+          "Mensaje:\n" + mensaje + "\n\n" +
+          "Saludos."
+        );
+        window.location.href = `mailto:alfredo.netro@deppg.com?subject=${subject}&body=${body}`;
+        
+        setTimeout(() => {
+          closeCaOverlay();
+        }, 1000);
+      }, 4500);
+    };
+  }
 
   /* Nav */
   $$(".nav-btn[data-view], .tab-btn[data-view]").forEach((b) =>
@@ -2734,7 +3022,13 @@ async function init() {
     DB.invalidate(); // Invalidate cache safely without deleting rows, preventing data loss on slow/failed fetches
 
     try {
-      if (_cur === "erb") {
+      if (_cur === "home") {
+        await Promise.all([
+          DB.loadERB().catch(() => {}),
+          DB.loadPozos().catch(() => {}),
+        ]);
+        updateHomeStats();
+      } else if (_cur === "erb") {
         await DB.loadERB().catch(() => {});
         const latest = DB.getLatestERB();
         const ts = latest ? latest.ts : null;
