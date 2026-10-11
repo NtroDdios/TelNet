@@ -667,6 +667,33 @@ function migrarPasswords() {
   });
 }
 
+/* Genera una contraseña aleatoria sin caracteres ambiguos (0/O, 1/l/I). */
+function generarPassword(largo) {
+  var abc = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  var bytes = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    Utilities.getUuid() + Utilities.getUuid(),
+  );
+  var out = "";
+  for (var i = 0; i < largo; i++) out += abc[((bytes[i] + 256) % 256) % abc.length];
+  return out;
+}
+
+/* Ejecutar desde el editor: asigna una contraseña nueva a TODOS los usuarios y la muestra
+   en el registro para repartirla. Las sesiones abiertas dejan de valer al cambiar la contraseña. */
+function rotarPasswords() {
+  withLock(function () {
+    var data = readUsers();
+    var lista = [];
+    data.users.forEach(function (u) {
+      var pwd = generarPassword(10);
+      data.sheet.getRange(u.row, 4).setValue(makeStoredPassword(pwd));
+      lista.push(u.nombre + " | " + u.correo + " | " + pwd);
+    });
+    console.log("Contraseñas nuevas (" + lista.length + "):\n" + lista.join("\n"));
+  });
+}
+
 /* Invalida TODAS las sesiones activas (útil si se sospecha un robo de token). */
 function cerrarTodasLasSesiones() {
   PropertiesService.getScriptProperties().deleteProperty("TOKEN_SECRET");
