@@ -1,3 +1,7 @@
 .gemini/
 .tempmediaStorage/
 *.log
+
+# Documentos internos (no publicar)
+*.pdf
+*.xlsx
