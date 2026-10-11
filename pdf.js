@@ -165,7 +165,7 @@ function _parseDate(ts) {
 }
 function _avg(rows, key) {
   if (!rows||!rows.length) return 0;
-  var s=0; rows.forEach(function(r){s+=parseFloat(r[key])||0;}); return s/rows.length;
+  var s=0, n=0; rows.forEach(function(r){var v=parseFloat(r[key]); if(!isNaN(v)){s+=v;n++;}}); return n?s/n:0;
 }
 function _series(rows, key, n) {
   if (!rows||!rows.length) return [0,0];

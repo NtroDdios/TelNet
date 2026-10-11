@@ -1,24 +1,25 @@
-const CACHE_NAME = "telnet-v1.0.18";
+const CACHE_NAME = "telnet-v1.1.0";
 const STATIC_ASSETS = [
   "./",
   "./index.html",
   "./index.css",
   "./app.js",
+  "./api.js",
   "./data.js",
+  "./pdf.js",
   "./manifest.json",
   "./assets/icon-512.png",
   "./assets/refinery_at_dusk.png",
-  "https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap",
   "https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css",
   "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js",
-  "https://unpkg.com/lucide@latest/dist/umd/lucide.min.js",
 ];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(STATIC_ASSETS).catch((err) => {
+      const reqs = STATIC_ASSETS.map((u) => new Request(u, { cache: "reload" }));
+      return cache.addAll(reqs).catch((err) => {
         console.warn("[SW] Some assets could not be cached:", err);
       });
     }),
@@ -62,7 +63,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-first for static assets
+  // Network-first for the app's own files so a deploy is picked up immediately;
+  // the cache is only the offline fallback
+  if (url.origin === self.location.origin) {
+    event.respondWith(
+      fetch(request, { cache: "no-cache" })
+        .then((response) => {
+          if (response && response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, clone));
+          }
+          return response;
+        })
+        .catch(() => caches.match(request)),
+    );
+    return;
+  }
+
+  // Cache-first for versioned CDN libraries
   event.respondWith(
     caches.match(request).then((cached) => {
       if (cached) return cached;

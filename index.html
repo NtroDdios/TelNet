@@ -31,7 +31,12 @@
         }
       }
     </script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://mt1.google.com https://unpkg.com; connect-src 'self' https://docs.google.com https://*.googleusercontent.com https://script.google.com https://ipapi.co https://cdn.jsdelivr.net https://unpkg.com https://cdnjs.cloudflare.com https://fonts.googleapis.com https://fonts.gstatic.com; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta
       name="description"
       content="TelNet – Monitoreo en tiempo real de estaciones de recolección y bombeo, y pozos petroleros."
@@ -57,6 +62,8 @@
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H"
+      crossorigin="anonymous"
     />
 
     <link rel="stylesheet" href="index.css" />
@@ -497,10 +504,8 @@
                 onclick="
                   alert(
                     SETTINGS && SETTINGS.idioma === 'en'
-                      ? 'A recovery link has been sent to your email. If you do not receive it within 5 minutes, please contact technical support.'
-                      : SETTINGS && SETTINGS.idioma === 'zh'
-                        ? '密码重置链接已发送到您的邮箱。5分钟内未收到请联系技术支持。'
-                        : 'Se ha enviado un enlace de recuperación a su correo electrónico. Si no lo recibe en 5 minutos, contacte a soporte técnico.',
+                      ? 'Contact the administrator to reset your password.'
+                      : 'Contacte al administrador para restablecer su contraseña.',
                   );
                   return false;
                 "
@@ -2354,12 +2359,13 @@
     </div>
 
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
     <!-- Leaflet -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
     <!-- jsPDF -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk" crossorigin="anonymous"></script>
     <!-- App -->
+    <script src="api.js"></script>
     <script src="data.js"></script>
     <script src="pdf.js"></script>
     <script src="app.js"></script>

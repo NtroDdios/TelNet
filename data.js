@@ -10,8 +10,6 @@ const DB = (function () {
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vT_8dadg9C3qMvGt9nHj29zA4gpewQt_5J1DToV9jtunqdS-qDY9WaBZ89YBhhGvZIx9AQSAdQBDov1/pub?output=csv";
   var COORDENADAS_CSV =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vT_8dadg9C3qMvGt9nHj29zA4gpewQt_5J1DToV9jtunqdS-qDY9WaBZ89YBhhGvZIx9AQSAdQBDov1/pub?output=csv&gid=48860810";
-  var USUARIOS_CSV =
-    "https://docs.google.com/spreadsheets/d/e/2PACX-1vT_8dadg9C3qMvGt9nHj29zA4gpewQt_5J1DToV9jtunqdS-qDY9WaBZ89YBhhGvZIx9AQSAdQBDov1/pub?output=csv&gid=230819089";
 
   var MAX_ROWS = 250000;
   var TTL = 30000; // 30 seconds — keeps live data fresh
@@ -21,7 +19,6 @@ const DB = (function () {
     erb: { rows: [], ts: 0 },
     pozos: { rows: [], ts: 0 },
     coordenadas: { rows: [], ts: 0 },
-    usuarios: { rows: [], ts: 0 },
   };
 
   /* ── Static geodata ── */
@@ -73,240 +70,6 @@ const DB = (function () {
     },
   };
 
-  /* ── Always-available user list ── */
-  var USUARIOS = [
-    {
-      nombre: "Mauro Alberto Cedillo Azua",
-      correo: "mauro.cedillo@deppg.com",
-      rol: "supervisor",
-      password: "TN2026MC",
-    },
-    {
-      nombre: "Oscar Del Angel Gomez",
-      correo: "oscar.delangel@deppg.com",
-      rol: "supervisor",
-      password: "TN2026OA",
-    },
-    {
-      nombre: "Gabriel Hernandez Godinez",
-      correo: "gabriel.hernandez@deppg.com",
-      rol: "supervisor",
-      password: "TN2026GH",
-    },
-    {
-      nombre: "Alfredo Jose Fajardo Brito",
-      correo: "alfredo.fajardo@deppg.com",
-      rol: "supervisor",
-      password: "TN2026AF",
-    },
-    {
-      nombre: "Edgar Flores",
-      correo: "edgar.flores@deppg.com",
-      rol: "supervisor",
-      password: "TN2026EF",
-    },
-    {
-      nombre: "Gabriel Guzman de la Torre",
-      correo: "gabriel.guzman@deppg.com",
-      rol: "supervisor",
-      password: "TN2026GG",
-    },
-    {
-      nombre: "Jose Carlos Tinajero Martinez",
-      correo: "jose.tinajero@deppg.com",
-      rol: "supervisor",
-      password: "TN2026JT",
-    },
-    {
-      nombre: "Jose Guadalupe Perez De La Paz",
-      correo: "jose.perez@deppg.com",
-      rol: "supervisor",
-      password: "TN2026JP",
-    },
-    {
-      nombre: "Jose Alfredo Netro Angeles",
-      correo: "alfredo.netro@deppg.com",
-      rol: "administrador",
-      password: "TN2026NETRO",
-    },
-    {
-      nombre: "Gilberto Martell Cantero",
-      correo: "gilberto.martell@deppg.com",
-      rol: "supervisor",
-      password: "TN2026GM",
-    },
-    {
-      nombre: "Gregorio Ilagor Martinez",
-      correo: "gregorio.ilagor@deppg.com",
-      rol: "supervisor",
-      password: "TN2026GI",
-    },
-    {
-      nombre: "Alba Fabiola Garcia Perez",
-      correo: "alba.garcia@deppg.com",
-      rol: "supervisor",
-      password: "TN2026AG",
-    },
-  ];
-
-  /* Load cached users if available, otherwise load default USUARIOS */
-  var cachedUsers = safeGet("tn_usuarios");
-  if (cachedUsers && cachedUsers.rows && cachedUsers.rows.length) {
-    cache.usuarios = cachedUsers;
-  } else {
-    cache.usuarios.rows = USUARIOS;
-    cache.usuarios.ts = Date.now();
-  }
-
-  function saveUsuarios() {
-    try {
-      localStorage.setItem("tn_usuarios", JSON.stringify(cache.usuarios));
-    } catch (e) {
-      console.error("[DB] Error saving users:", e);
-    }
-  }
-
-  function syncUserAction(payload) {
-    var url = window.ACCESS_SCRIPT_URL || localStorage.getItem("tn_access_script_url"); // Fallback
-    if (url && url !== "APPS_SCRIPT_URL_AQUI") {
-      fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "text/plain" },
-        body: JSON.stringify(payload),
-        mode: "no-cors"
-      }).catch(function(e) {
-        console.error("[DB] Sync error:", e);
-      });
-    }
-  }
-
-  function addUsuario(u) {
-    if (!u.nombre || !u.correo || !u.password || !u.rol) {
-      throw new Error("Datos incompletos");
-    }
-    var email = u.correo.trim().toLowerCase();
-    var exists = cache.usuarios.rows.some(function (x) {
-      return x.correo.toLowerCase() === email;
-    });
-    if (exists) {
-      throw new Error("El usuario ya existe con este correo");
-    }
-    var newUser = {
-      nombre: u.nombre.trim(),
-      correo: email,
-      rol: u.rol.trim(),
-      password: u.password.trim(),
-      creado: new Date().toISOString()
-    };
-    cache.usuarios.rows.push(newUser);
-    cache.usuarios.ts = Date.now();
-    saveUsuarios();
-
-    syncUserAction({
-      action: "addUsuario",
-      nombre: newUser.nombre,
-      correo: newUser.correo,
-      rol: newUser.rol,
-      password: newUser.password
-    });
-
-    return newUser;
-  }
-
-  function deleteUsuario(email) {
-    var emailLower = email.trim().toLowerCase();
-    var initialLength = cache.usuarios.rows.length;
-    cache.usuarios.rows = cache.usuarios.rows.filter(function (x) {
-      return x.correo.toLowerCase() !== emailLower;
-    });
-    if (cache.usuarios.rows.length === initialLength) {
-      throw new Error("Usuario no encontrado");
-    }
-    cache.usuarios.ts = Date.now();
-    saveUsuarios();
-
-    syncUserAction({
-      action: "deleteUsuario",
-      correo: emailLower
-    });
-  }
-
-  function updateUsuarioRole(email, newRole) {
-    var emailLower = email.trim().toLowerCase();
-    var found = false;
-    for (var i = 0; i < cache.usuarios.rows.length; i++) {
-      if (cache.usuarios.rows[i].correo.toLowerCase() === emailLower) {
-        cache.usuarios.rows[i].rol = newRole.trim();
-        found = true;
-        
-        if (typeof CURRENT_USER !== "undefined" && CURRENT_USER && CURRENT_USER.correo.toLowerCase() === emailLower) {
-          CURRENT_USER.rol = newRole.trim();
-          try {
-            localStorage.setItem("tn_logged_user", JSON.stringify(CURRENT_USER));
-          } catch (e) {}
-        }
-        break;
-      }
-    }
-    if (!found) {
-      throw new Error("Usuario no encontrado");
-    }
-    cache.usuarios.ts = Date.now();
-    saveUsuarios();
-
-    syncUserAction({
-      action: "updateUsuarioRole",
-      correo: emailLower,
-      rol: newRole.trim()
-    });
-  }
-
-  function addUsuariosBulk(text, defaultRole) {
-    var lines = text.split(/\r?\n/);
-    var added = [];
-    var errors = [];
-    lines.forEach(function (line, index) {
-      var trimmed = line.trim();
-      if (!trimmed) return;
-      
-      // Try splitting by tabs or multiple spaces (2+)
-      var parts = trimmed.split(/[\t]+| {2,}/);
-      if (parts.length < 2) {
-        // Fallback to single spaces if no tabs or 2+ consecutive spaces
-        var singleSpaceParts = trimmed.split(/\s+/);
-        if (singleSpaceParts.length === 2) {
-          parts = singleSpaceParts;
-        } else {
-          errors.push("Línea " + (index + 1) + ": Formato incorrecto. Use: Nombre [Espacio] Contraseña");
-          return;
-        }
-      }
-      var nombre = parts[0].trim();
-      var password = parts[1].trim();
-      
-      // Auto-generate email
-      var cleanName = nombre.toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-z0-9\s]/g, "")
-        .trim();
-      var email = cleanName.replace(/\s+/g, ".") + "@deppg.com";
-
-      try {
-        var newUser = addUsuario({
-          nombre: nombre,
-          correo: email,
-          password: password,
-          rol: defaultRole || "supervisor"
-        });
-        added.push(newUser);
-      } catch (e) {
-        errors.push("Línea " + (index + 1) + " (" + nombre + "): " + e.message);
-      }
-    });
-    return { added: added, errors: errors };
-  }
-
   /* ── Helpers ── */
   function safeGet(k) {
     try {
@@ -318,6 +81,12 @@ const DB = (function () {
 
   function toF(v) {
     return parseFloat(v) || 0;
+  }
+  /* Like toF but keeps blanks as null (alarm rows carry no readings) */
+  function toN(v) {
+    if (v == null || String(v).trim() === "") return null;
+    var n = parseFloat(v);
+    return isNaN(n) ? null : n;
   }
   function toI(v) {
     return parseInt(v) || 0;
@@ -397,15 +166,15 @@ const DB = (function () {
           ts: p[0] ? p[0].trim() : "",
           pozo: pozo,
           tipo: p[2] ? p[2].trim() : "",
-          par: toF(p[3]),
-          rpm: toF(p[4]),
-          I: toF(p[5]),
-          V: toF(p[6]),
-          vll: toF(p[7]),
-          freq: toF(p[8]),
-          temp: toF(p[9]),
-          gRPM: toF(p[10]),
-          ptp: toF(p[11]),
+          par: toN(p[3]),
+          rpm: toN(p[4]),
+          I: toN(p[5]),
+          V: toN(p[6]),
+          vll: toN(p[7]),
+          freq: toN(p[8]),
+          temp: toN(p[9]),
+          gRPM: toN(p[10]),
+          ptp: toN(p[11]),
           texto: p[12] ? p[12].trim() : "",
         };
       })
@@ -541,69 +310,38 @@ const DB = (function () {
     return cache.coordenadas.rows;
   }
 
-  async function loadUsuarios() {
-    var now = Date.now();
-    if (!cache.usuarios.rows.length || (now - cache.usuarios.ts > TTL)) {
-      try {
-        var result = await fetchCSV(USUARIOS_CSV, true);
-        var remoteUsers = result.rows.map(function(line) {
-          var p = csvSplit(line);
-          return {
-            nombre: p[0] ? p[0].trim() : "",
-            correo: p[1] ? p[1].trim().toLowerCase() : "",
-            rol: p[2] ? p[2].trim().toLowerCase() : "supervisor",
-            password: p[3] ? p[3].trim() : ""
-          };
-        }).filter(function(u) {
-          return u.nombre && u.correo && u.password;
-        });
-
-        remoteUsers.forEach(function(ru) {
-          var localUser = cache.usuarios.rows.find(function(lu) {
-            return lu.correo.toLowerCase() === ru.correo;
-          });
-          if (localUser) {
-            localUser.nombre = ru.nombre;
-            localUser.rol = ru.rol;
-            localUser.password = ru.password;
-          } else {
-            cache.usuarios.rows.push(ru);
-          }
-        });
-
-        cache.usuarios.ts = now;
-        saveUsuarios();
-      } catch (e) {
-        console.warn("[DB] Usuarios fetch failed, using cache:", e.message);
-      }
-    }
-    return cache.usuarios.rows;
-  }
-
   /* ── PUBLIC API ── */
+
+  /* A device that hasn't reported within STALE_MS is shown as communication loss */
+  var STALE_MS = 30 * 60 * 1000;
+  function isStale(ts) {
+    var d = parseDate(ts);
+    return !d || Date.now() - d.getTime() > STALE_MS;
+  }
 
   function getLatestERB() {
     var r = cache.erb.rows;
     return r.length ? r[r.length - 1] : null;
   }
 
-  function getERBHistory(hours) {
-    hours = hours || 24;
-    var r = cache.erb.rows;
-    if (!r.length) return [];
-    // Try filtering by real timestamp first
+  /* Rows inside the last `hours`. Falls back to a row-count estimate only when
+     the timestamps can't be parsed at all, so a silent device shows an empty window
+     instead of stale data mislabeled as recent. */
+  function lastHours(rows, hours, rowsPerHour) {
+    if (!rows.length) return [];
     var cutoff = new Date(Date.now() - hours * 3600 * 1000);
-    var filtered = r.filter(function (row) {
-      if (!row.ts) return true;
-      var d = new Date(row.ts.replace(" ", "T"));
-      return !isNaN(d.getTime()) && d >= cutoff;
+    var parsed = 0;
+    var filtered = rows.filter(function (row) {
+      var d = parseDate(row.ts);
+      if (d) parsed++;
+      return d !== null && d >= cutoff;
     });
-    // If timestamp filtering got nothing (bad timestamps), fall back to row count estimate
-    if (!filtered.length) {
-      var n = Math.min(hours * 60, r.length);
-      return r.slice(-n);
-    }
+    if (!parsed) return rows.slice(-Math.min(hours * rowsPerHour, rows.length));
     return filtered;
+  }
+
+  function getERBHistory(hours) {
+    return lastHours(cache.erb.rows, hours || 24, 60);
   }
 
   function getERBHistoryRange(fromDate, toDate) {
@@ -611,8 +349,8 @@ const DB = (function () {
     if (!r.length) return [];
     return r.filter(function (row) {
       if (!row.ts) return false;
-      var d = new Date(row.ts.replace(" ", "T"));
-      return !isNaN(d.getTime()) && d >= fromDate && d <= toDate;
+      var d = parseDate(row.ts);
+      return d !== null && d >= fromDate && d <= toDate;
     });
   }
 
@@ -628,7 +366,7 @@ const DB = (function () {
         ubicacion: "Sector Ébano",
         tanques: 3,
         ts: l.ts,
-        estado: anyAlarm ? "warning" : "online",
+        estado: isStale(l.ts) ? "offline" : anyAlarm ? "warning" : "online",
         lat: geo.lat,
         lng: geo.lng,
       },
@@ -641,7 +379,11 @@ const DB = (function () {
     return {
       nombre: "ERB E41",
       sector: "Sector Ébano",
-      estado: l.alm601H || l.alm602H || l.alm741H ? "warning" : "online",
+      estado: isStale(l.ts)
+        ? "offline"
+        : l.alm601H || l.alm602H || l.alm741H
+          ? "warning"
+          : "online",
       ts: l.ts,
       tanks: [
         {
@@ -695,45 +437,45 @@ const DB = (function () {
         sector: geo.sector || "Ébano",
         campo: geo.campo || "Campo Ébano",
         estado:
-          r.texto === "Normal"
-            ? "online"
-            : r.texto === ""
-              ? "offline"
+          r.texto === "" || isStale(r.ts)
+            ? "offline"
+            : r.texto === "Normal"
+              ? "online"
               : "warning",
         ts: r.ts,
         lat: coords.lat,
         lng: coords.lng,
-        latest: r,
+        latest: getPozoLatest(nombre),
       };
     });
   }
 
+  /* Latest status row for a well. Alarm rows carry no readings, so the numeric
+     fields are filled from the most recent row that has them; `valsTs` tells
+     which timestamp those readings belong to. */
+  var READING_KEYS = ["par", "rpm", "I", "V", "vll", "freq", "temp", "gRPM", "ptp"];
   function getPozoLatest(nombre) {
     var rows = cache.pozos.rows;
+    var latest = null;
     for (var i = rows.length - 1; i >= 0; i--) {
-      if (rows[i].pozo === nombre) return rows[i];
+      if (rows[i].pozo !== nombre) continue;
+      if (!latest) latest = Object.assign({ valsTs: null }, rows[i]);
+      if (rows[i].ptp !== null || rows[i].freq !== null) {
+        READING_KEYS.forEach(function (k) {
+          if (latest[k] === null) latest[k] = rows[i][k];
+        });
+        latest.valsTs = rows[i].ts;
+        break;
+      }
     }
-    return null;
+    return latest;
   }
 
   function getPozoHistory(nombre, hours) {
-    hours = hours || 24;
     var rows = cache.pozos.rows.filter(function (r) {
       return r.pozo === nombre;
     });
-    if (!rows.length) return [];
-    // Try filtering by real timestamp first
-    var cutoff = new Date(Date.now() - hours * 3600 * 1000);
-    var filtered = rows.filter(function (row) {
-      if (!row.ts) return true;
-      var d = new Date(row.ts.replace(" ", "T"));
-      return !isNaN(d.getTime()) && d >= cutoff;
-    });
-    if (!filtered.length) {
-      var n = Math.min(hours * 30, rows.length);
-      return rows.slice(-n);
-    }
-    return filtered;
+    return lastHours(rows, hours || 24, 30);
   }
 
   function getPozoHistoryRange(nombre, fromDate, toDate) {
@@ -743,8 +485,8 @@ const DB = (function () {
     if (!rows.length) return [];
     return rows.filter(function (row) {
       if (!row.ts) return false;
-      var d = new Date(row.ts.replace(" ", "T"));
-      return !isNaN(d.getTime()) && d >= fromDate && d <= toDate;
+      var d = parseDate(row.ts);
+      return d !== null && d >= fromDate && d <= toDate;
     });
   }
 
@@ -760,29 +502,6 @@ const DB = (function () {
     }
     if (found) return { lat: found.lat, lng: found.lng };
     return GEO_POZOS[nombre] || { lat: 22.23, lng: -98.27 };
-  }
-
-  function authenticate(correo, password) {
-    var email = correo.trim().toLowerCase();
-    var pwd = password.trim();
-    console.log("[DB] authenticate invocado para:", email);
-    console.log(
-      "[DB] Total usuarios en caché para comparar:",
-      cache.usuarios.rows ? cache.usuarios.rows.length : 0,
-    );
-    for (var i = 0; i < cache.usuarios.rows.length; i++) {
-      var u = cache.usuarios.rows[i];
-      if (u.correo === email && u.password === pwd) {
-        console.log("[DB] Usuario coincidente encontrado:", u.nombre);
-        return u;
-      }
-    }
-    console.log("[DB] No se encontró coincidencia de correo/contraseña");
-    return null;
-  }
-
-  function getUsuarios() {
-    return cache.usuarios.rows;
   }
 
   function invalidate() {
@@ -816,7 +535,6 @@ const DB = (function () {
     loadERB,
     loadPozos,
     loadCoords,
-    loadUsuarios,
     getEstaciones,
     getERBDetalle,
     getERBHistory,
@@ -826,15 +544,10 @@ const DB = (function () {
     getPozoLatest,
     getPozoHistory,
     getPozoHistoryRange,
-    authenticate,
-    getUsuarios,
     getCoords,
     invalidate,
-    addUsuario,
-    deleteUsuario,
-    updateUsuarioRole,
-    addUsuariosBulk,
-    invalidate,
+    parseDate,
+    isStale,
     forceRefresh,
     GEO_ERB,
     GEO_POZOS,

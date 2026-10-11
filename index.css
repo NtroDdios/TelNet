@@ -2568,3 +2568,10 @@ body.light .ca-btn-cancel {
   .ca-sending-title { font-size: 1.5rem; }
   .ca-form-card { padding: 1.8rem 1.4rem; }
 }
+
+/* ── Cambiar contraseña / gestión de usuarios ── */
+.aj-pass-grid{display:grid;grid-template-columns:repeat(3,1fr) auto;gap:.6rem}
+.aj-pass-grid .aj-input{width:100%}
+.btn-reset-pass{margin-right:.25rem}
+.btn-reset-pass:hover{color:var(--orange)}
+@media(max-width:768px){.aj-pass-grid{grid-template-columns:1fr}}

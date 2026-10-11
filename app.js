@@ -300,6 +300,12 @@ const TRANSLATIONS = {
     Hoy: "Today",
     "Sin datos": "No data",
     "Hace un momento": "Just now",
+    "Cambiar mi contraseña": "Change my password",
+    "Contraseña actual": "Current password",
+    "Nueva contraseña (mín. 8)": "New password (min. 8)",
+    "Confirmar contraseña": "Confirm password",
+    Actualizar: "Update",
+    "Restablecer contraseña": "Reset password",
   },
   zh: {
     "E.R.B": "E.R.B",
@@ -624,10 +630,16 @@ let CURRENT_USER = null;
    ACCESS HISTORY LOGGER & MODAL  (cross-device via Google Apps Script)
 ────────────────────────────────────────────── */
 
-// ⚠ COLOCA AQUÍ LA URL de tu Apps Script desplegado:
-// Extensions > Apps Script > Deploy > Web App > "Anyone" > Copy URL
-const ACCESS_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbzvORT5f8pyrca71o73mCE8xakID5ZaIyVcI5ioYRX1rRc4sXN2wQj_wD_3MYbdp2oC/exec";
+/* Escape text before interpolating it into HTML. Anything that comes from the
+   spreadsheets or the backend must go through this. */
+function esc(v) {
+  return String(v == null ? "" : v)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 
 const ACCESS_HISTORY_KEY = "tn_access_history"; // localStorage cache key
 const ACCESS_COOLDOWN_KEY = "tn_access_cooldown"; // timestamp of last log
@@ -695,15 +707,14 @@ async function logAccessEvent(user) {
     /* no geo */
   }
 
-  // POST to Google Apps Script (non-blocking)
-  if (ACCESS_SCRIPT_URL && ACCESS_SCRIPT_URL !== "APPS_SCRIPT_URL_AQUI") {
-    fetch(ACCESS_SCRIPT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify(entry),
-      mode: "no-cors", // Apps Script requires no-cors
-    }).catch(() => {});
-  }
+  // POST to Google Apps Script (non-blocking). The server takes the identity
+  // from the session token, not from this payload.
+  API.call("logAcceso", {
+    dispositivo: entry.dispositivo,
+    os: entry.os,
+    ip: entry.ip,
+    ubicacion: entry.ubicacion,
+  }).catch(() => {});
 
   // Also save locally as fallback
   try {
@@ -728,18 +739,18 @@ function _ahRow(e) {
   });
   const ok = (v) => v && v !== "Obteniendo..." && v !== "Sin datos" && v !== "";
   const ubicHtml = ok(e.ubicacion)
-    ? `<span style="color:var(--green)">${e.ubicacion}</span>`
-    : `<span style="color:var(--txt3)">${e.ubicacion || "—"}</span>`;
+    ? `<span style="color:var(--green)">${esc(e.ubicacion)}</span>`
+    : `<span style="color:var(--txt3)">${esc(e.ubicacion || "—")}</span>`;
   const ipHtml = ok(e.ip)
-    ? `<span style="font-family:monospace">${e.ip}</span>`
+    ? `<span style="font-family:monospace">${esc(e.ip)}</span>`
     : `<span style="color:var(--txt3)">—</span>`;
   return `<tr>
     <td><div style="font-weight:600;font-size:.84rem">${fecha}</div>
         <div style="color:var(--txt3);font-size:.74rem">${hora}</div></td>
-    <td><div style="font-size:.83rem">${e.usuario || e.correo}</div>
-        <div style="color:var(--txt3);font-size:.72rem">${e.correo}</div></td>
-    <td><div style="font-size:.83rem">${e.dispositivo || "—"}</div>
-        <div style="color:var(--txt3);font-size:.72rem">${e.os || ""}</div></td>
+    <td><div style="font-size:.83rem">${esc(e.usuario || e.correo)}</div>
+        <div style="color:var(--txt3);font-size:.72rem">${esc(e.correo)}</div></td>
+    <td><div style="font-size:.83rem">${esc(e.dispositivo || "—")}</div>
+        <div style="color:var(--txt3);font-size:.72rem">${esc(e.os || "")}</div></td>
     <td style="font-size:.78rem">${ipHtml}</td>
     <td style="font-size:.78rem">${ubicHtml}</td>
   </tr>`;
@@ -819,16 +830,12 @@ window.openAccessHistoryModal = async function () {
   let logs = [];
   let source = "local";
 
-  if (ACCESS_SCRIPT_URL && ACCESS_SCRIPT_URL !== "APPS_SCRIPT_URL_AQUI") {
-    try {
-      const res = await fetch(ACCESS_SCRIPT_URL, { cache: "no-store" });
-      if (res.ok) {
-        logs = await res.json();
-        source = "cloud";
-      }
-    } catch (_) {
-      /* fall through */
-    }
+  try {
+    const res = await API.call("getAccesos");
+    logs = res.accesos || [];
+    source = "cloud";
+  } catch (_) {
+    /* fall through */
   }
 
   // Fallback: localStorage
@@ -856,7 +863,7 @@ window.openAccessHistoryModal = async function () {
   const srcLabel =
     source === "cloud"
       ? "📡 Todos los dispositivos · Google Sheets"
-      : "⚠ Solo este dispositivo (Apps Script no configurado)";
+      : "⚠ Solo este dispositivo (sin conexión con el servidor)";
   if (subtitle) subtitle.textContent = srcLabel;
   if (countEl)
     countEl.textContent = `${logs.length} registro${logs.length !== 1 ? "s" : ""}`;
@@ -943,13 +950,16 @@ function sampleSeries(rows, key, maxPts = 120) {
       }
       return ts.substring(0, 5);
     }),
-    vals: out.map((r) => r[key] ?? 0),
+    vals: out.map((r) => (r[key] == null ? null : r[key])),
   };
 }
 
 function avg(rows, key) {
-  if (!rows.length) return 0;
-  return rows.reduce((a, r) => a + (parseFloat(r[key]) || 0), 0) / rows.length;
+  const vals = rows
+    .map((r) => parseFloat(r[key]))
+    .filter((v) => !isNaN(v));
+  if (!vals.length) return 0;
+  return vals.reduce((a, v) => a + v, 0) / vals.length;
 }
 
 /* ──────────────────────────────────────────────
@@ -988,10 +998,7 @@ const CHART_OPTS = (color) => ({
       bodyColor: "#e8edf5",
       padding: 10,
       callbacks: {
-        title: (items) => {
-          const l = items[0]?.label || "";
-          return `10:${l}`; // enrich if possible
-        },
+        title: (items) => items[0]?.label || "",
       },
     },
   },
@@ -1083,14 +1090,14 @@ function navigate(view, params = {}) {
   const info = TOPBAR_INFO[view] || { title: view, sub: "" };
   if (view === "erb-detail" && params.nombre) {
     el("topbar-title").innerHTML =
-      `<span style="color:var(--txt2);cursor:pointer" id="bc-erb">${_t("E.R.B")}</span> <span style="color:var(--txt3)">›</span> ${params.nombre}`;
+      `<span style="color:var(--txt2);cursor:pointer" id="bc-erb">${_t("E.R.B")}</span> <span style="color:var(--txt3)">›</span> ${esc(params.nombre)}`;
     setTimeout(
       () => el("bc-erb")?.addEventListener("click", () => navigate("erb")),
       0,
     );
   } else if (view === "pozo-detail" && params.nombre) {
     el("topbar-title").innerHTML =
-      `<span style="color:var(--txt2);cursor:pointer" id="bc-pz">${_t("Pozos")}</span> <span style="color:var(--txt3)">›</span> ${params.nombre}`;
+      `<span style="color:var(--txt2);cursor:pointer" id="bc-pz">${_t("Pozos")}</span> <span style="color:var(--txt3)">›</span> ${esc(params.nombre)}`;
     setTimeout(
       () => el("bc-pz")?.addEventListener("click", () => navigate("pozos")),
       0,
@@ -1160,14 +1167,14 @@ function updateHomeStats() {
 
   const latestERB = DB.getLatestERB();
   if (latestERB && latestERB.ts) {
-    const d = new Date(latestERB.ts.replace(" ", "T"));
-    if (!isNaN(d.getTime())) latestDate = d;
+    const d = DB.parseDate(latestERB.ts);
+    if (d) latestDate = d;
   }
 
   pozos.forEach((p) => {
     if (p.ts) {
-      const d = new Date(p.ts.replace(" ", "T"));
-      if (!isNaN(d.getTime()) && (!latestDate || d > latestDate)) {
+      const d = DB.parseDate(p.ts);
+      if (d && (!latestDate || d > latestDate)) {
         latestDate = d;
       }
     }
@@ -1256,7 +1263,7 @@ function renderERBList() {
   tbody.innerHTML = list
     .map(
       (s) => `
-    <tr data-id="${s.id}" data-nombre="${s.nombre}">
+    <tr data-id="${esc(s.id)}" data-nombre="${esc(s.nombre)}">
       <td>
         <div class="row-icon-wrap">
           <span class="row-derrick">
@@ -1267,12 +1274,12 @@ function renderERBList() {
               <line x1="12" y1="2" x2="12" y2="4"/>
             </svg>
           </span>
-          <span class="row-name">${s.nombre}</span>
+          <span class="row-name">${esc(s.nombre)}</span>
         </div>
       </td>
-      <td>${s.ubicacion}</td>
-      <td style="text-align:center">${s.tanques}</td>
-      <td>${s.ts || "—"}</td>
+      <td>${esc(s.ubicacion)}</td>
+      <td style="text-align:center">${esc(s.tanques)}</td>
+      <td>${esc(s.ts || "—")}</td>
       <td>${fmtStatus(s.estado)}</td>
       <td class="td-arrow">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
@@ -1461,10 +1468,13 @@ function renderERBDetail(range, customFrom, customTo) {
 
   // Header
   el("ed-title").textContent = d.nombre;
-  el("ed-status").textContent =
-    d.estado === "online" ? "● " + _t("En línea") : "● " + _t("Advertencia");
-  el("ed-status").className =
-    "status-pill " + (d.estado === "online" ? "green" : "orange");
+  const edStatus = {
+    online: [_t("En línea"), "green"],
+    warning: [_t("Advertencia"), "orange"],
+    offline: [_t("Sin conexión"), "gray"],
+  }[d.estado];
+  el("ed-status").textContent = "● " + edStatus[0];
+  el("ed-status").className = "status-pill " + edStatus[1];
   el("ed-loc").textContent = d.sector;
   el("ed-update").textContent = `${_t("Última actualización")}: ${d.ts || "—"}`;
 
@@ -1536,9 +1546,9 @@ function renderERBDetail(range, customFrom, customTo) {
     .map((t, i) => {
       const P = Math.max(0, Math.min(100, t.pct));
       const liquidClass =
-        P <= (SETTINGS.tanques.nivelCritico || 10)
+        t.alarmH || t.alarmL || P >= (SETTINGS.tanques.nivelCritico || 80)
           ? "danger"
-          : P <= (SETTINGS.tanques.nivelAdvertencia || 20)
+          : P >= (SETTINGS.tanques.nivelAdvertencia || 70)
             ? "warn"
             : "";
       return `
@@ -1570,7 +1580,7 @@ function renderERBDetail(range, customFrom, customTo) {
     <div class="tank-det-card" onclick="window.openTankChartModal(${i})">
       <div class="tdc-head">
         <div><h4>${t.nombre}</h4><span>${_t("Tanque de Almacenamiento")} ${t.nombre}</span></div>
-        <span class="status-pill ${t.alarmH ? "orange" : "green"}">● ${t.alarmH ? _t("Alarma") : _t("En línea")}</span>
+        <span class="status-pill ${t.alarmH || t.alarmL ? "orange" : "green"}">● ${t.alarmH || t.alarmL ? _t("Alarma") : _t("En línea")}</span>
       </div>
       <div class="tdc-metrics">
         <div style="display:flex;gap:1.5rem">
@@ -1692,7 +1702,7 @@ function renderPozosList() {
   tbody.innerHTML = list
     .map(
       (p) => `
-    <tr data-nombre="${p.nombre}">
+    <tr data-nombre="${esc(p.nombre)}">
       <td>
         <div class="row-icon-wrap">
           <span class="row-derrick" style="color:var(--green)">
@@ -1703,12 +1713,12 @@ function renderPozosList() {
               <rect x="9" y="15" width="6" height="4" rx="1"/>
             </svg>
           </span>
-          <span class="row-name">${p.nombre}</span>
+          <span class="row-name">${esc(p.nombre)}</span>
         </div>
       </td>
-      <td>${p.sector}</td>
-      <td>${p.campo}</td>
-      <td>${p.ts || "—"}</td>
+      <td>${esc(p.sector)}</td>
+      <td>${esc(p.campo)}</td>
+      <td>${esc(p.ts || "—")}</td>
       <td>${fmtStatusPozo(p.estado)}</td>
       <td class="td-arrow">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
@@ -1824,14 +1834,18 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
     range === "CUSTOM" && customFrom && customTo
       ? DB.getPozoHistoryRange(nombre, customFrom, customTo)
       : DB.getPozoHistory(nombre, hours);
+  const stale = DB.isStale(latest.ts);
   const isNormal = latest.texto === "Normal";
 
   // Header
   el("pd-title").textContent = nombre;
-  el("pd-status").textContent = isNormal
-    ? "● " + _t("En producción")
-    : "● " + _t("Advertencia");
-  el("pd-status").className = "status-pill " + (isNormal ? "green" : "orange");
+  el("pd-status").textContent = stale
+    ? "● " + _t("Sin conexión")
+    : isNormal
+      ? "● " + _t("En producción")
+      : "● " + latest.texto;
+  el("pd-status").className =
+    "status-pill " + (stale ? "gray" : isNormal ? "green" : "orange");
   const geo = DB.GEO_POZOS[nombre];
   el("pd-loc").textContent = geo ? geo.sector : "Ébano";
   el("pd-update").textContent =
@@ -1858,10 +1872,16 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
   const avgGRPM = avg(hist, "gRPM");
 
   function trend(cur, mean) {
-    const pct = mean ? (((cur - mean) / mean) * 100).toFixed(1) : 0;
+    if (cur == null || !mean) return `<span class="mc-trend">—</span>`;
+    const pct = ((cur - mean) / mean) * 100;
     const cls = pct >= 0 ? "up" : "dn";
-    return `<span class="mc-trend ${cls}">↑ ${Math.abs(pct)}%</span>`;
+    return `<span class="mc-trend ${cls}">${pct >= 0 ? "↑" : "↓"} ${Math.abs(pct).toFixed(1)}%</span>`;
   }
+  // Readings are null when the last report was an alarm with no values
+  const num = (v, d) =>
+    v == null
+      ? "—"
+      : v.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
   el("pd-metrics").innerHTML = `
     <div class="metric-card">
@@ -1871,7 +1891,7 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
         </span>
         <span class="mc-label">${_t("Presión en TP")}</span>
       </div>
-      <div class="mc-val">${latest.ptp.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span>PSI</span></div>
+      <div class="mc-val">${num(latest.ptp, 0)}<span>PSI</span></div>
       <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgPTP.toFixed(0)} PSI</span>${trend(latest.ptp, avgPTP)}</div>
     </div>
     <div class="metric-card">
@@ -1881,7 +1901,7 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
         </span>
         <span class="mc-label">${_t("Torque")}</span>
       </div>
-      <div class="mc-val">${latest.par.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span>lb-ft</span></div>
+      <div class="mc-val">${num(latest.par, 0)}<span>lb-ft</span></div>
       <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgPAR.toFixed(0)} lb-ft</span>${trend(latest.par, avgPAR)}</div>
     </div>
     <div class="metric-card">
@@ -1891,7 +1911,7 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
         </span>
         <span class="mc-label">${_t("Corriente")}</span>
       </div>
-      <div class="mc-val">${latest.I.toFixed(1)}<span>A</span></div>
+      <div class="mc-val">${num(latest.I, 1)}<span>A</span></div>
       <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgI.toFixed(1)} A</span>${trend(latest.I, avgI)}</div>
     </div>
     <div class="metric-card">
@@ -1901,7 +1921,7 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
         </span>
         <span class="mc-label">${_t("Gen - Temperatura")}</span>
       </div>
-      <div class="mc-val">${latest.temp.toFixed(1)}<span>°C</span></div>
+      <div class="mc-val">${num(latest.temp, 1)}<span>°C</span></div>
       <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgTemp.toFixed(1)} °C</span>${trend(latest.temp, avgTemp)}</div>
     </div>
     <div class="metric-card">
@@ -1911,7 +1931,7 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
         </span>
         <span class="mc-label">${_t("Gen - Voltaje L-L")}</span>
       </div>
-      <div class="mc-val">${latest.vll.toFixed(1)}<span>V</span></div>
+      <div class="mc-val">${num(latest.vll, 1)}<span>V</span></div>
       <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgVLL.toFixed(1)} V</span>${trend(latest.vll, avgVLL)}</div>
     </div>
     <div class="metric-card">
@@ -1921,7 +1941,7 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
         </span>
         <span class="mc-label">${_t("Gen - Frecuencia")}</span>
       </div>
-      <div class="mc-val">${latest.freq.toFixed(1)}<span>Hz</span></div>
+      <div class="mc-val">${num(latest.freq, 1)}<span>Hz</span></div>
       <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgFreq.toFixed(1)} Hz</span>${trend(latest.freq, avgFreq)}</div>
     </div>
     <div class="metric-card">
@@ -1931,7 +1951,7 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
         </span>
         <span class="mc-label">${_t("Gen - RPM")}</span>
       </div>
-      <div class="mc-val">${latest.gRPM.toFixed(0).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}<span>RPM</span></div>
+      <div class="mc-val">${num(latest.gRPM, 0)}<span>RPM</span></div>
       <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgGRPM.toFixed(0)} RPM</span>${trend(latest.gRPM, avgGRPM)}</div>
     </div>`;
 
@@ -2064,27 +2084,37 @@ function renderMapMarkers() {
   const bounds = L.latLngBounds();
 
   estaciones.forEach((s) => {
-    const dot = s.estado === "online" ? "#2ecc71" : "#f39c12";
-    const statusTxt = s.estado === "online" ? "En línea" : "Advertencia";
+    const dot =
+      s.estado === "online"
+        ? "#2ecc71"
+        : s.estado === "warning"
+          ? "#f39c12"
+          : "#4a5a6e";
+    const statusTxt =
+      s.estado === "online"
+        ? "En línea"
+        : s.estado === "warning"
+          ? "Advertencia"
+          : "Sin conexión";
     const icon = L.divIcon({
       className: "",
       iconAnchor: [0, 0],
       html: `<div class="mkr-pill mkr-erb">
         <svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="1"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-        ${s.nombre}
+        ${esc(s.nombre)}
       </div>`,
     });
     const mk = L.marker([s.lat, s.lng], { icon }).addTo(_map);
     mk.bindPopup(
-      `<b style="color:#4d9ffc">${s.nombre}</b><br/>${s.ubicacion}<br/>Estado: ${statusTxt}`,
+      `<b style="color:#4d9ffc">${esc(s.nombre)}</b><br/>${esc(s.ubicacion)}<br/>Estado: ${statusTxt}`,
     );
     mk.on("click", () =>
       navigate("erb-detail", { id: s.id, nombre: s.nombre }),
     );
-    assetHTML += `<div class="asset-row" onclick="navigate('erb-detail',{id:'${s.id}',nombre:'${s.nombre}'})">
+    assetHTML += `<div class="asset-row" data-view="erb-detail" data-id="${esc(s.id)}" data-nombre="${esc(s.nombre)}">
       <span class="asset-name">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#4d9ffc" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="1"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>
-        ${s.nombre}
+        ${esc(s.nombre)}
       </span>
       <span class="asset-status" style="color:${dot}"><span class="asset-dot">●</span> ${statusTxt}</span>
     </div>`;
@@ -2104,13 +2134,13 @@ function renderMapMarkers() {
         ? "En producción"
         : p.estado === "warning"
           ? "Advertencia"
-          : "En evaluación";
+          : "Sin conexión";
     const icon = L.divIcon({
       className: "",
       iconAnchor: [0, 0],
       html: `<div class="mkr-pill mkr-pz">
         <svg class="mi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="2" x2="12" y2="22"/><path d="M5 8h14"/><path d="M7 5l5-3 5 3"/></svg>
-        ${p.nombre}
+        ${esc(p.nombre)}
       </div>`,
     });
     const mk = L.marker([p.lat, p.lng], { icon }).addTo(_map);
@@ -2142,20 +2172,20 @@ function renderMapMarkers() {
       .join("");
     mk.bindPopup(
       `<div class="map-popup">
-        <div class="mp-head" style="color:#2ecc71">${p.nombre}</div>
-        <div class="mp-sub">${p.sector} &bull; <span style="color:${dot}">● ${statusTxt}</span></div>
+        <div class="mp-head" style="color:#2ecc71">${esc(p.nombre)}</div>
+        <div class="mp-sub">${esc(p.sector)} &bull; <span style="color:${dot}">● ${statusTxt}</span></div>
         ${popupRows ? `<table class="mp-table">${popupRows}</table>` : ""}
         <div style="margin-top:.5rem;text-align:right">
-          <span class="mp-link" onclick="navigate('pozo-detail',{nombre:'${p.nombre}'})">Ver detalle →</span>
+          <span class="mp-link" data-view="pozo-detail" data-nombre="${esc(p.nombre)}">Ver detalle →</span>
         </div>
       </div>`,
       { maxWidth: 260 },
     );
     mk.on("click", () => navigate("pozo-detail", { nombre: p.nombre }));
-    assetHTML += `<div class="asset-row" onclick="navigate('pozo-detail',{nombre:'${p.nombre}'})">
+    assetHTML += `<div class="asset-row" data-view="pozo-detail" data-nombre="${esc(p.nombre)}">
       <span class="asset-name">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2"><line x1="12" y1="2" x2="12" y2="22"/><path d="M5 8h14"/><path d="M7 5l5-3 5 3"/></svg>
-        ${p.nombre}
+        ${esc(p.nombre)}
       </span>
       <span class="asset-status" style="color:${dot}"><span class="asset-dot">●</span> ${statusTxt}</span>
     </div>`;
@@ -2171,6 +2201,10 @@ function renderMapMarkers() {
   }
 
   el("asset-list").innerHTML = assetHTML;
+  el("asset-list").onclick = (e) => {
+    const row = e.target.closest(".asset-row[data-view]");
+    if (row) navigate(row.dataset.view, { id: row.dataset.id, nombre: row.dataset.nombre });
+  };
   el("asset-count").textContent = count;
 }
 
@@ -2244,7 +2278,7 @@ function renderAjustes() {
       <div class="aj-card-head">
         <span class="aj-card-icon" style="color:#e74c3c"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
         <h3>👥 ${tr("Usuarios y Roles")}</h3>
-        <span style="margin-left:auto;font-size:.8rem;color:var(--txt2)">${tr("Usuario actual")}: <strong style="color:var(--txt)">${CURRENT_USER ? CURRENT_USER.nombre : "Invitado"}</strong> <span style="color:var(--txt3)">(${CURRENT_USER ? tr(CURRENT_USER.rol.charAt(0).toUpperCase() + CURRENT_USER.rol.slice(1)) : "Sin rol"})</span></span>
+        <span style="margin-left:auto;font-size:.8rem;color:var(--txt2)">${tr("Usuario actual")}: <strong style="color:var(--txt)">${CURRENT_USER ? esc(CURRENT_USER.nombre) : "Invitado"}</strong> <span style="color:var(--txt3)">(${CURRENT_USER ? esc(tr(CURRENT_USER.rol.charAt(0).toUpperCase() + CURRENT_USER.rol.slice(1))) : "Sin rol"})</span></span>
       </div>
 
       ${
@@ -2260,37 +2294,11 @@ function renderAjustes() {
               <tr>
                 <th>${tr("Nombre")}</th>
                 <th>${tr("Correo")}</th>
-                <th>${tr("Contraseña")}</th>
                 <th>${tr("Rol")}</th>
-                <th style="width:50px;text-align:center"></th>
+                <th style="width:90px;text-align:center"></th>
               </tr>
             </thead>
-            <tbody>
-              ${DB.getUsuarios()
-                .map(
-                  (u) => `
-                <tr>
-                  <td><strong>${u.nombre}</strong></td>
-                  <td>${u.correo}</td>
-                  <td><span style="font-family:monospace;letter-spacing:1px" title="${u.password}">${u.password}</span></td>
-                  <td>
-                    <select class="user-role-select" onchange="DB.updateUsuarioRole('${u.correo}', this.value); renderAjustes(); applyLang();">
-                      <option value="administrador" ${sel(u.rol, "administrador")}>${tr("Administrador")}</option>
-                      <option value="supervisor" ${sel(u.rol, "supervisor")}>${tr("Supervisor")}</option>
-                      <option value="operador" ${sel(u.rol, "operador")}>${tr("Operador")}</option>
-                      <option value="visitante" ${sel(u.rol, "visitante")}>${tr("Visitante")}</option>
-                    </select>
-                  </td>
-                  <td style="text-align:center">
-                    <button class="btn-delete-user" ${u.correo === CURRENT_USER.correo ? "disabled" : ""} onclick="if(confirm('¿Eliminar usuario ${u.nombre}?')) { DB.deleteUsuario('${u.correo}'); renderAjustes(); applyLang(); }" title="${tr("Eliminar usuario")}">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                    </button>
-                  </td>
-                </tr>
-              `,
-                )
-                .join("")}
-            </tbody>
+            <tbody id="aj-users-tbody">${renderUserRows(tr)}</tbody>
           </table>
         </div>
       `
@@ -2315,6 +2323,21 @@ function renderAjustes() {
       }
     </div>
 
+    <!-- ── FULL-WIDTH: Cambiar contraseña ── -->
+    <div class="aj-card" style="padding:1.25rem 1.3rem">
+      <div class="aj-card-head">
+        <span class="aj-card-icon" style="color:#f5a623"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg></span>
+        <h3>${tr("Cambiar mi contraseña")}</h3>
+      </div>
+      <div class="aj-pass-grid">
+        <input type="password" id="cp-actual" class="aj-input" autocomplete="current-password" placeholder="${tr("Contraseña actual")}">
+        <input type="password" id="cp-nueva" class="aj-input" autocomplete="new-password" placeholder="${tr("Nueva contraseña (mín. 8)")}">
+        <input type="password" id="cp-confirma" class="aj-input" autocomplete="new-password" placeholder="${tr("Confirmar contraseña")}">
+        <button class="aj-btn" data-act="change-pass" style="background:var(--blue);color:#fff;border:none">${tr("Actualizar")}</button>
+      </div>
+      <p id="cp-msg" style="font-size:.8rem;margin-top:.6rem"></p>
+    </div>
+
     <!-- ── FULL-WIDTH: Seguridad ── -->
     ${
       isAdmin
@@ -2328,7 +2351,7 @@ function renderAjustes() {
       <div class="aj-row"><span class="aj-lbl">Versión del sistema</span><span class="aj-val" style="color:var(--txt3)">1.0.0</span></div>
       <div class="aj-row">
         <span class="aj-lbl" style="color:var(--red);font-weight:600">${tr("Cerrar sesión") || "Cerrar sesión"}</span>
-        <button class="aj-btn" style="border-color:var(--red);color:var(--red);font-weight:600" onclick="if(confirm(SETTINGS.idioma==='en'?'Do you want to sign out?':SETTINGS.idioma==='zh'?'您要退出登录吗？':'¿Desea cerrar sesión?')){localStorage.removeItem('tn_logged_user');window.location.reload();}">Salir</button>
+        <button class="aj-btn" style="border-color:var(--red);color:var(--red);font-weight:600" onclick="if(confirm(SETTINGS.idioma==='en'?'Do you want to sign out?':SETTINGS.idioma==='zh'?'您要退出登录吗？':'¿Desea cerrar sesión?')){logout();}">Salir</button>
       </div>
     </div>
     `
@@ -2340,12 +2363,156 @@ function renderAjustes() {
       </div>
       <div class="aj-row">
         <span class="aj-lbl" style="color:var(--red);font-weight:600">${tr("Cerrar sesión") || "Cerrar sesión"}</span>
-        <button class="aj-btn" style="border-color:var(--red);color:var(--red);font-weight:600" onclick="if(confirm(SETTINGS.idioma==='en'?'Do you want to sign out?':SETTINGS.idioma==='zh'?'您要退出登录吗？':'¿Desea cerrar sesión?')){localStorage.removeItem('tn_logged_user');window.location.reload();}">Salir</button>
+        <button class="aj-btn" style="border-color:var(--red);color:var(--red);font-weight:600" onclick="if(confirm(SETTINGS.idioma==='en'?'Do you want to sign out?':SETTINGS.idioma==='zh'?'您要退出登录吗？':'¿Desea cerrar sesión?')){logout();}">Salir</button>
       </div>
     </div>
     `
     }
   `;
+
+  const root = el("ajustes-content");
+  root.onclick = onAjustesClick;
+  root.onchange = onAjustesChange;
+  if (isAdmin && _adminUsers === null) loadAdminUsers();
+}
+
+/* ─── USER ADMINISTRATION (server-side via API) ─── */
+let _adminUsers = null; // null = not loaded yet
+let _adminUsersError = "";
+
+function renderUserRows(tr) {
+  if (_adminUsersError)
+    return `<tr><td colspan="4" style="text-align:center;color:var(--red);padding:1.5rem">${esc(_adminUsersError)}</td></tr>`;
+  if (_adminUsers === null)
+    return `<tr><td colspan="4" style="text-align:center;color:var(--txt3);padding:1.5rem">${tr("Cargando...")}</td></tr>`;
+  const sel = (val, opt) => (val === opt ? "selected" : "");
+  const me = CURRENT_USER ? CURRENT_USER.correo : "";
+  return _adminUsers
+    .map((u) => {
+      const self = u.correo === me;
+      return `
+      <tr data-correo="${esc(u.correo)}" data-nombre="${esc(u.nombre)}">
+        <td><strong>${esc(u.nombre)}</strong></td>
+        <td>${esc(u.correo)}</td>
+        <td>
+          <select class="user-role-select" ${self ? "disabled" : ""}>
+            <option value="administrador" ${sel(u.rol, "administrador")}>${tr("Administrador")}</option>
+            <option value="supervisor" ${sel(u.rol, "supervisor")}>${tr("Supervisor")}</option>
+            <option value="operador" ${sel(u.rol, "operador")}>${tr("Operador")}</option>
+            <option value="visitante" ${sel(u.rol, "visitante")}>${tr("Visitante")}</option>
+          </select>
+        </td>
+        <td style="text-align:center;white-space:nowrap">
+          <button class="btn-delete-user btn-reset-pass" data-act="reset-pass" title="${tr("Restablecer contraseña")}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>
+          </button>
+          <button class="btn-delete-user" data-act="delete-user" ${self ? "disabled" : ""} title="${tr("Eliminar usuario")}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+          </button>
+        </td>
+      </tr>`;
+    })
+    .join("");
+}
+
+function refreshUserRows() {
+  const tbody = el("aj-users-tbody");
+  if (tbody) tbody.innerHTML = renderUserRows(_t);
+}
+
+async function loadAdminUsers() {
+  _adminUsersError = "";
+  try {
+    const res = await API.call("listUsuarios");
+    _adminUsers = res.usuarios || [];
+  } catch (e) {
+    if (e.auth) return handleAuthError();
+    _adminUsers = [];
+    _adminUsersError = e.message;
+  }
+  refreshUserRows();
+}
+
+/* Random temporary password without ambiguous characters */
+function tempPassword() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
+  const buf = new Uint32Array(10);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (n) => chars[n % chars.length]).join("");
+}
+
+async function onAjustesClick(e) {
+  const btn = e.target.closest("[data-act]");
+  if (!btn || btn.disabled) return;
+  const row = btn.closest("tr[data-correo]");
+  const correo = row ? row.dataset.correo : "";
+  const nombre = row ? row.dataset.nombre : "";
+  try {
+    if (btn.dataset.act === "delete-user") {
+      if (!confirm(`¿Eliminar usuario ${nombre}?`)) return;
+      btn.disabled = true;
+      await API.call("deleteUsuario", { correo });
+      await loadAdminUsers();
+    } else if (btn.dataset.act === "reset-pass") {
+      const pwd = tempPassword();
+      if (
+        !confirm(
+          `Se asignará a ${nombre} la contraseña temporal:\n\n${pwd}\n\nAnótela antes de continuar. ¿Aplicar?`,
+        )
+      )
+        return;
+      btn.disabled = true;
+      await API.call("resetPassword", { correo, password: pwd });
+      btn.disabled = false;
+      alert(`Contraseña de ${nombre} restablecida.`);
+    } else if (btn.dataset.act === "change-pass") {
+      await changeOwnPassword(btn);
+    }
+  } catch (err) {
+    btn.disabled = false;
+    if (err.auth) return handleAuthError();
+    alert("Error: " + err.message);
+    loadAdminUsers();
+  }
+}
+
+async function onAjustesChange(e) {
+  const select = e.target.closest(".user-role-select");
+  if (!select) return;
+  const correo = select.closest("tr[data-correo]").dataset.correo;
+  select.disabled = true;
+  try {
+    await API.call("updateUsuarioRole", { correo, rol: select.value });
+  } catch (err) {
+    if (err.auth) return handleAuthError();
+    alert("Error: " + err.message);
+  }
+  loadAdminUsers();
+}
+
+async function changeOwnPassword(btn) {
+  const msg = el("cp-msg");
+  const actual = el("cp-actual").value;
+  const nueva = el("cp-nueva").value;
+  const confirma = el("cp-confirma").value;
+  const show = (text, ok) => {
+    msg.textContent = text;
+    msg.style.color = ok ? "var(--green)" : "var(--red)";
+  };
+  if (!actual || !nueva) return show("Complete todos los campos.");
+  if (nueva.length < 8)
+    return show("La nueva contraseña debe tener al menos 8 caracteres.");
+  if (nueva !== confirma) return show("Las contraseñas no coinciden.");
+  btn.disabled = true;
+  try {
+    const user = await API.changePassword(actual, nueva);
+    CURRENT_USER = user;
+    el("cp-actual").value = el("cp-nueva").value = el("cp-confirma").value = "";
+    show("Contraseña actualizada.", true);
+  } catch (err) {
+    show(err.message);
+  }
+  btn.disabled = false;
 }
 
 /* ─── ADD USERS MODAL AND HANDLERS ─── */
@@ -2420,7 +2587,7 @@ window.openAddUsersModal = function () {
 
           <div style="display:flex;gap:0.75rem;justify-content:flex-end;margin-top:1.25rem;border-top:1px solid var(--border);padding-top:1rem">
             <button class="aj-btn" onclick="el('add-users-modal').classList.add('hidden')">${tr("Cancelar")}</button>
-            <button class="aj-btn" style="background:var(--blue);color:#fff;border:none" onclick="window.saveUsersFromModal()">${tr("Agregar")}</button>
+            <button class="aj-btn" id="mu-save-btn" style="background:var(--blue);color:#fff;border:none" onclick="window.saveUsersFromModal()">${tr("Agregar")}</button>
           </div>
         </div>
       </div>
@@ -2461,55 +2628,83 @@ window.switchUserFormTab = function (type) {
   }
 };
 
-window.saveUsersFromModal = function () {
+/* Parses "Nombre<TAB or 2+ spaces>Contraseña" lines; the email is derived from the name */
+function parseBulkUsers(text) {
+  const usuarios = [];
+  const errors = [];
+  text.split(/\r?\n/).forEach((line, index) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let parts = trimmed.split(/[\t]+| {2,}/);
+    if (parts.length < 2) {
+      const single = trimmed.split(/\s+/);
+      if (single.length !== 2) {
+        errors.push(`Línea ${index + 1}: Formato incorrecto. Use: Nombre [Espacio] Contraseña`);
+        return;
+      }
+      parts = single;
+    }
+    const nombre = parts[0].trim();
+    const password = parts[1].trim();
+    const clean = nombre
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9\s]/g, "")
+      .trim();
+    usuarios.push({ nombre, password, correo: clean.replace(/\s+/g, ".") + "@deppg.com" });
+  });
+  return { usuarios, errors };
+}
+
+window.saveUsersFromModal = async function () {
   const feedback = el("add-users-feedback");
   feedback.innerHTML = "";
+  const showResult = (added, errors) => {
+    feedback.innerHTML = `
+      ${errors.length ? `<div class="user-errors-box"><h4>Errores (${errors.length}):</h4><ul>${errors.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>` : ""}
+      ${added ? `<div class="user-success-box">Se agregaron con éxito ${added} usuarios.</div>` : ""}`;
+  };
 
+  let payload;
+  let localErrors = [];
   if (window._addUsersType === "single") {
     const nombre = el("mu-name").value.trim();
-    const email = el("mu-email").value.trim();
-    const pass = el("mu-pass").value.trim();
-    const role = el("mu-role").value;
-
-    if (!nombre || !email || !pass) {
+    const correo = el("mu-email").value.trim();
+    const password = el("mu-pass").value.trim();
+    const rol = el("mu-role").value;
+    if (!nombre || !correo || !password) {
       feedback.innerHTML = `<div class="user-errors-box">Por favor, rellene todos los campos.</div>`;
       return;
     }
-
-    try {
-      DB.addUsuario({ nombre, correo: email, password: pass, rol: role });
-      renderAjustes();
-      applyLang();
-      el("add-users-modal").classList.add("hidden");
-    } catch (e) {
-      feedback.innerHTML = `<div class="user-errors-box">${e.message}</div>`;
-    }
+    payload = { usuarios: [{ nombre, correo, password, rol }] };
   } else {
     const text = el("mub-text").value;
-    const defaultRole = el("mub-role").value;
-
     if (!text.trim()) {
       feedback.innerHTML = `<div class="user-errors-box">Por favor, ingrese el texto de los usuarios.</div>`;
       return;
     }
+    const parsed = parseBulkUsers(text);
+    const rol = el("mub-role").value;
+    localErrors = parsed.errors;
+    payload = { usuarios: parsed.usuarios.map((u) => Object.assign(u, { rol })) };
+  }
 
-    const res = DB.addUsuariosBulk(text, defaultRole);
-    renderAjustes();
-    applyLang();
-
-    if (res.errors.length > 0) {
-      feedback.innerHTML = `
-        <div class="user-errors-box">
-          <h4>Errores (${res.errors.length}):</h4>
-          <ul>
-            ${res.errors.map((err) => `<li>${err}</li>`).join("")}
-          </ul>
-        </div>
-        ${res.added.length > 0 ? `<div class="user-success-box">Se agregaron con éxito ${res.added.length} usuarios.</div>` : ""}
-      `;
-    } else {
-      el("add-users-modal").classList.add("hidden");
-    }
+  const btn = el("mu-save-btn");
+  if (btn) btn.disabled = true;
+  try {
+    const res = payload.usuarios.length
+      ? await API.call("addUsuariosBulk", payload)
+      : { added: [], errors: [] };
+    const errors = localErrors.concat(res.errors || []);
+    await loadAdminUsers();
+    if (errors.length) showResult(res.added.length, errors);
+    else el("add-users-modal").classList.add("hidden");
+  } catch (e) {
+    if (e.auth) return handleAuthError();
+    feedback.innerHTML = `<div class="user-errors-box">${esc(e.message)}</div>`;
+  } finally {
+    if (btn) btn.disabled = false;
   }
 };
 
@@ -2617,6 +2812,43 @@ function openTankChartModal(index) {
 window.openTankChartModal = openTankChartModal;
 
 /* ──────────────────────────────────────────────
+   SESSION
+────────────────────────────────────────────── */
+function renderTopbarUser(user) {
+  el("topbar-user").innerHTML = `
+    <span class="user-avatar">${esc(user.nombre.charAt(0).toUpperCase())}</span>
+    <span class="user-name">${esc(user.nombre.split(" ")[0])}</span>
+    <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+  `;
+}
+
+function startApp(user) {
+  CURRENT_USER = user;
+  _adminUsers = null;
+  renderTopbarUser(user);
+  el("view-login").style.display = "none";
+  el("app").classList.remove("hidden");
+  Promise.all([DB.loadCoords(), DB.loadERB(), DB.loadPozos()]).catch(console.warn);
+  navigate("home");
+  logAccessEvent(user);
+}
+
+function logout() {
+  API.clearSession();
+  window.location.reload();
+}
+
+/* The server rejected the token (expired, revoked, password changed) */
+function handleAuthError() {
+  alert(
+    SETTINGS.idioma === "en"
+      ? "Your session has expired. Please sign in again."
+      : "Su sesión expiró. Inicie sesión nuevamente.",
+  );
+  logout();
+}
+
+/* ──────────────────────────────────────────────
    INIT
 ────────────────────────────────────────────── */
 async function init() {
@@ -2624,48 +2856,20 @@ async function init() {
   applyTheme();
   applyLang();
 
-  // Restore saved session if exists
-  try {
-    const savedUser = JSON.parse(localStorage.getItem("tn_logged_user"));
-    if (savedUser) {
-      CURRENT_USER = savedUser;
-      const firstLetter = savedUser.nombre.charAt(0).toUpperCase();
-      const firstName = savedUser.nombre.split(" ")[0];
-      el("topbar-user").innerHTML = `
-        <span class="user-avatar">${firstLetter}</span>
-        <span class="user-name">${firstName}</span>
-        <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-      `;
-      el("view-login").style.display = "none";
-      el("app").classList.remove("hidden");
-
-      DB.loadUsuarios()
-        .then((users) => {
-          const latestUser = users.find(
-            (u) => u.correo.toLowerCase() === savedUser.correo.toLowerCase(),
-          );
-          if (latestUser) {
-            CURRENT_USER = latestUser;
-            localStorage.setItem("tn_logged_user", JSON.stringify(latestUser));
-            const firstLetter = latestUser.nombre.charAt(0).toUpperCase();
-            const firstName = latestUser.nombre.split(" ")[0];
-            el("topbar-user").innerHTML = `
-              <span class="user-avatar">${firstLetter}</span>
-              <span class="user-name">${firstName}</span>
-              <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-            `;
-          }
-        })
-        .catch(console.warn);
-
-      Promise.all([DB.loadCoords(), DB.loadERB(), DB.loadPozos()]).catch(
-        console.warn,
-      );
-      navigate("home");
-      logAccessEvent(savedUser);
-    }
-  } catch (e) {
-    console.error("[Session] Error restoring session:", e);
+  // Restore saved session; the server re-validates the token and the current role
+  const session = API.readSession();
+  if (session) {
+    startApp(session.user);
+    API.call("me")
+      .then((res) => {
+        CURRENT_USER = res.user;
+        API.updateSession(session.token, res.user);
+        renderTopbarUser(res.user);
+        if (_cur === "ajustes") renderAjustes();
+      })
+      .catch((e) => {
+        if (e.auth) handleAuthError();
+      });
   }
 
   // Bind logout / profile click handler
@@ -2679,10 +2883,7 @@ async function init() {
           ? `用户个人资料：\n\n姓名：${CURRENT_USER.nombre}\n角色：${CURRENT_USER.rol}\n\n您要退出登录吗？`
           : `Perfil de Usuario:\n\nNombre: ${CURRENT_USER.nombre}\nRol: ${CURRENT_USER.rol}\n\n¿Desea cerrar sesión?`;
 
-    if (confirm(msg)) {
-      localStorage.removeItem("tn_logged_user");
-      window.location.reload();
-    }
+    if (confirm(msg)) logout();
   };
 
   /* Login */
@@ -2692,11 +2893,9 @@ async function init() {
   };
 
   el("btn-login").onclick = async () => {
-    console.log("[Login] Inicio de sesión iniciado");
     const btn = el("btn-login");
     const email = el("l-email").value.trim();
-    const pass = el("l-pass").value.trim();
-    console.log("[Login] Email ingresado:", email);
+    const pass = el("l-pass").value;
 
     // Clear any previous error
     const prevErr = document.getElementById("login-err-msg");
@@ -2731,76 +2930,19 @@ async function init() {
     btn.disabled = true;
 
     try {
-      console.log("[Login] Llamando a DB.loadUsuarios...");
-      await DB.loadUsuarios();
-      console.log("[Login] DB.loadUsuarios cargado");
+      const user = await API.login(email, pass, el("remember")?.checked);
+      el("l-pass").value = "";
+      startApp(user);
     } catch (e) {
-      console.error("[Login] Error cargando usuarios:", e);
-    }
-
-    let users = [];
-    try {
-      users = DB.getUsuarios();
-      console.log("[Login] Usuarios obtenidos:", users ? users.length : 0);
-    } catch (e) {
-      console.error("[Login] Error al obtener usuarios de DB:", e);
-    }
-
-    if (!users || users.length === 0) {
+      const offline = !e.message || /fetch|HTTP|network/i.test(e.message);
       showErr(
-        SETTINGS.idioma === "en"
-          ? "⚠ Could not connect to database. Please try again."
-          : SETTINGS.idioma === "zh"
-            ? "⚠ 无法连接数据库，请重试。"
-            : "⚠ No se pudo conectar con la base de datos. Intente de nuevo.",
+        offline
+          ? SETTINGS.idioma === "en"
+            ? "⚠ Could not connect to the server. Please try again."
+            : "⚠ No se pudo conectar con el servidor. Intente de nuevo."
+          : esc(e.message),
       );
-      return;
     }
-
-    let user = null;
-    try {
-      user = DB.authenticate(email, pass);
-      console.log("[Login] Resultado autenticación:", user ? "Éxito" : "Fallo");
-    } catch (e) {
-      console.error("[Login] Error en DB.authenticate:", e);
-    }
-    if (!user) {
-      showErr(
-        SETTINGS.idioma === "en"
-          ? "Incorrect email or password."
-          : SETTINGS.idioma === "zh"
-            ? "邮箱或密码错误。"
-            : "Correo o contraseña incorrectos.",
-      );
-      return;
-    }
-
-    // Success
-    CURRENT_USER = user;
-    try {
-      localStorage.setItem("tn_logged_user", JSON.stringify(user));
-    } catch (e) {
-      console.error("[Session] Error saving user session:", e);
-    }
-
-    const firstLetter = user.nombre.charAt(0).toUpperCase();
-    const firstName = user.nombre.split(" ")[0];
-    el("topbar-user").innerHTML = `
-      <span class="user-avatar">${firstLetter}</span>
-      <span class="user-name">${firstName}</span>
-      <svg class="user-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
-    `;
-
-    el("view-login").style.display = "none";
-    el("app").classList.remove("hidden");
-
-    // Preload coords and data in background
-    Promise.all([DB.loadCoords(), DB.loadERB(), DB.loadPozos()]).catch(
-      console.warn,
-    );
-
-    navigate("home");
-    logAccessEvent(user);
   };
 
   el("l-pass").addEventListener("keydown", (e) => {
@@ -2981,6 +3123,12 @@ async function init() {
     sb.classList.remove("open");
     overlay.classList.add("hidden");
   }
+
+  /* "Ver detalle" links inside Leaflet popups */
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest(".mp-link[data-view]");
+    if (link) navigate(link.dataset.view, { nombre: link.dataset.nombre });
+  });
 
   /* Close dropdowns on outside click */
   document.addEventListener("click", () => {
