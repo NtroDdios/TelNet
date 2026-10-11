@@ -16,7 +16,7 @@
  */
 
 var destinatariosGlobal =
-  "alfredo.netro@deppg.com, alba.garcia@deppg.com, gilberto.martell@deppg.com";
+  "alfredo.netro@deppg.com"; //, alba.garcia@deppg.com, gilberto.martell@deppg.com";
 
 // --- CONFIGURACIÓN DE FILTRO ---
 var POZOS_IGNORADOS = [];
@@ -490,6 +490,12 @@ function doPost(e) {
 
     if (data.action) {
       return handleAction(data);
+    }
+
+    // Registro de acceso de una versión vieja de la app (sin token): se descarta,
+    // para que no termine escrito como fila de telemetría en DATOS.
+    if (data.dispositivo !== undefined) {
+      return json({ ok: false, error: "Actualice la aplicación", auth: false });
     }
 
     // --- TELEMETRÍA DE EQUIPOS ---
