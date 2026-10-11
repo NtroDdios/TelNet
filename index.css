@@ -1392,7 +1392,8 @@ input[type="datetime-local"]:focus {
   top: 42%;
   transform: translate(-50%, -50%);
   color: #fff;
-  font-size: 22px;
+  font-size: 16px;
+  white-space: nowrap;
   font-weight: 800;
   text-shadow: 0 2px 10px rgba(0, 0, 0, .55);
 }

@@ -954,6 +954,21 @@ function sampleSeries(rows, key, maxPts = 120) {
   };
 }
 
+/* ERB E41: barriles por metro de nivel de TV-601, TV-602 y TV-741 */
+const ERB_BBL_POR_M = [1092.953, 1066.058202, 840.1914];
+const ERB_NIV_KEYS = ["niv601", "niv602", "niv741"];
+
+function erbSerieBbl(rows, i) {
+  const key = ERB_NIV_KEYS[i];
+  return sampleSeries(
+    rows.map((r) => ({
+      ts: r.ts,
+      v: r[key] == null ? null : r[key] * ERB_BBL_POR_M[i],
+    })),
+    "v",
+  );
+}
+
 function avg(rows, key) {
   const vals = rows
     .map((r) => parseFloat(r[key]))
@@ -1498,13 +1513,12 @@ function renderERBDetail(range, customFrom, customTo) {
 
   // Metrics – tanks
   const tanks = d.tanks;
-  const factors = [1092.953, 1066.058202, 840.1914];
   let totalCap = 0;
   let totalVol = 0;
 
   tanks.forEach((t, i) => {
-    t.capMax = t.altMax * factors[i] || 0;
-    t.volActual = t.nivel * factors[i] || 0;
+    t.capMax = t.altMax * ERB_BBL_POR_M[i] || 0;
+    t.volActual = t.nivel * ERB_BBL_POR_M[i] || 0;
     t.pct = Math.max(0, Math.min(100, t.pct));
     totalCap += t.capMax;
     totalVol += t.volActual;
@@ -1561,7 +1575,7 @@ function renderERBDetail(range, customFrom, customTo) {
         <div class="stairs"></div>
         <div class="pipe"></div>
         <div class="tank-body">
-          <div class="liquid ${liquidClass}" data-percent="${P.toFixed(0)}%"></div>
+          <div class="liquid ${liquidClass}" data-percent="${fmt(t.volActual)} bbl"></div>
         </div>
         <div class="tank-base"></div>
       </div>
@@ -1589,8 +1603,8 @@ function renderERBDetail(range, customFrom, customTo) {
         </div>
         <div class="circle-chart">
           <svg><circle class="circle-bg" cx="37" cy="37" r="32"/><circle class="circle-fg" cx="37" cy="37" r="32" stroke-dasharray="${t.pct * 2.01} 201"/></svg>
-          <span class="circle-val">${t.pct.toFixed(1)}%</span>
-          <span class="circle-lbl">${_t("Llenado")}</span>
+          <span class="circle-val">${fmt(t.volActual)}</span>
+          <span class="circle-lbl">bbl</span>
         </div>
       </div>
       <div class="tdc-chart-wrap">
@@ -1603,10 +1617,8 @@ function renderERBDetail(range, customFrom, customTo) {
     .join("");
 
   // Draw Charts for each tank
-  const chartKeys = ["pct601", "pct602", "pct741"];
-  chartKeys.forEach((key, i) => {
-    if (i >= tanks.length) return;
-    const { labels, vals } = sampleSeries(history, key);
+  tanks.forEach((t, i) => {
+    const { labels, vals } = erbSerieBbl(history, i);
     setTimeout(() => {
       CHR.create(`tchart-${i}`, {
         type: "line",
@@ -1614,7 +1626,7 @@ function renderERBDetail(range, customFrom, customTo) {
           labels,
           datasets: [
             {
-              label: "Nivel %",
+              label: "Nivel bbl",
               data: vals,
               borderColor: "#1d7af5",
               backgroundColor: "rgba(29,122,245,0.1)",
@@ -1638,12 +1650,12 @@ function renderERBDetail(range, customFrom, customTo) {
             y: {
               display: true,
               min: 0,
-              max: 100,
+              max: Math.ceil(t.capMax) || undefined,
               ticks: {
-                stepSize: 25,
+                maxTicksLimit: 5,
                 color: "#7b8ea8",
                 font: { size: 10 },
-                callback: (v) => v + "%",
+                callback: (v) => fmt(v),
               },
               grid: { color: "rgba(255,255,255,0.05)" },
             },
@@ -2743,9 +2755,8 @@ function openTankChartModal(index) {
 
   const hours = rangeHours(_erbRange);
   const history = DB.getERBHistory(hours);
-  const chartKeys = ["pct601", "pct602", "pct741"];
-  const key = chartKeys[index];
-  const { labels, vals } = sampleSeries(history, key);
+  const { labels, vals } = erbSerieBbl(history, index);
+  const capMax = Math.ceil(t.altMax * ERB_BBL_POR_M[index]) || undefined;
 
   CHR.create("modal-chart", {
     type: "line",
@@ -2753,7 +2764,7 @@ function openTankChartModal(index) {
       labels,
       datasets: [
         {
-          label: `Nivel % (${t.nombre})`,
+          label: `Nivel bbl (${t.nombre})`,
           data: vals,
           borderColor: "#1d7af5",
           backgroundColor: "rgba(29,122,245,0.15)",
@@ -2780,11 +2791,12 @@ function openTankChartModal(index) {
         y: {
           display: true,
           min: 0,
-          max: 100,
+          max: capMax,
           ticks: {
             color: "#7b8ea8",
             font: { size: 11 },
-            callback: (v) => v + "%",
+            callback: (v) =>
+              v.toLocaleString("en-US", { maximumFractionDigits: 0 }),
           },
           grid: { color: "rgba(255,255,255,0.06)" },
         },
