@@ -225,38 +225,127 @@ const DB = (function () {
   }
 
   /* ── Load helpers ── */
+  /* ── E41: solo las últimas ~26 h de lecturas, no los 25 MB de toda la historia ──
+     El CSV publicado acepta &range=A{fila}:T (de esa fila al final). Ojo: si la fila de
+     inicio pasa de la última, Google devuelve la hoja COMPLETA, así que el inicio siempre
+     es una cota inferior segura:
+       - Primera carga: la suma de "muestras" de RESUMEN_HORA es exactamente el número de
+         lecturas hasta la última hora cerrada (fila = suma + 2).
+       - Después: solo las filas nuevas, desde la siguiente fila conocida menos un margen. */
+  var ERB_VENTANA_FILAS = 26 * 60; // una lectura por minuto
+  var ERB_MARGEN_FILAS = 30;
+  var ERB_MAX_CACHE = 3000;
+
+  async function fetchERBDesde(fila) {
+    var url = ESTACIONES_CSV + "&range=A" + fila + ":T&t=" + Date.now();
+    var res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var lines = (await res.text()).split(/\r?\n/).filter(function (l) {
+      return l.trim();
+    });
+    // Rango fuera de la hoja: llegó el documento completo, empezando por el encabezado
+    var completo = lines.length && /fecha/i.test(lines[0]);
+    return { lines: completo ? lines.slice(1) : lines, completo: completo };
+  }
+
+  function sumaMuestras() {
+    return cache.resumen.hora.reduce(function (a, r) {
+      return a + (r.muestras || 0);
+    }, 0);
+  }
+
   async function loadERB() {
     var now = Date.now();
     if (cache.erb.ts && now - cache.erb.ts < TTL && cache.erb.rows.length)
       return cache.erb.rows;
     try {
-      var result = await fetchCSV(ESTACIONES_CSV, false);
-      var newRows = parseERB(result.rows);
-
-      // Prevent rollback/going backward in time due to Google CDN sync delay
-      var currentLatest = cache.erb.rows.length ? cache.erb.rows[cache.erb.rows.length - 1] : null;
-      var newLatest = newRows.length ? newRows[newRows.length - 1] : null;
-      if (currentLatest && newLatest) {
-        var currentTs = parseDate(currentLatest.ts);
-        var newTs = parseDate(newLatest.ts);
-        if (currentTs && newTs && newTs < currentTs) {
-          console.warn("[DB] Ignored older ERB data fetched (likely CDN sync lag).");
-          cache.erb.ts = now;
-          return cache.erb.rows;
-        }
+      var previas = cache.erb.rows;
+      var ultima = previas.length ? parseDate(previas[previas.length - 1].ts) : null;
+      // Lo guardado de una sesión vieja no sirve como punto de partida
+      if (!ultima || now - ultima > ERB_VENTANA_FILAS * 60e3) {
+        cache.erb.next = 0;
+        previas = [];
       }
 
-      cache.erb.rows = newRows;
+      var desde;
+      if (cache.erb.next) {
+        desde = Math.max(2, cache.erb.next - ERB_MARGEN_FILAS);
+      } else {
+        await loadResumen();
+        var total = sumaMuestras();
+        desde = total ? Math.max(2, total + 2 - ERB_VENTANA_FILAS) : 0;
+      }
+
+      var r = desde ? await fetchERBDesde(desde) : await fetchCSV(ESTACIONES_CSV, true);
+      var lineas = desde ? r.lines : r.rows;
+      var nuevas = parseERB(lineas);
+      var siguiente = desde && !r.completo ? desde + lineas.length : 2 + lineas.length;
+
+      // Unir sin duplicar: solo filas posteriores a la última que ya tenemos.
+      // También evita retroceder en el tiempo si el CDN de Google entrega datos atrasados.
+      var corte = previas.length ? parseDate(previas[previas.length - 1].ts) : null;
+      var agregadas = corte
+        ? nuevas.filter(function (row) {
+            var d = parseDate(row.ts);
+            return d && d > corte;
+          })
+        : nuevas;
+      var filas = previas.concat(agregadas);
+      if (filas.length > ERB_MAX_CACHE) filas = filas.slice(-ERB_MAX_CACHE);
+
+      cache.erb.rows = filas;
+      cache.erb.next = Math.max(cache.erb.next || 0, siguiente);
       cache.erb.ts = now;
       try {
         localStorage.setItem("tn_erb", JSON.stringify(cache.erb));
       } catch (e) {}
     } catch (e) {
       console.warn("[DB] ERB fetch failed:", e.message);
-      var s = safeGet("tn_erb");
-      if (s) Object.assign(cache.erb, s);
+      if (!cache.erb.rows.length) {
+        var s = safeGet("tn_erb");
+        if (s) Object.assign(cache.erb, s);
+      }
     }
     return cache.erb.rows;
+  }
+
+  /* ── Pozos: solo los últimos 7 días (la pestaña DATOS completa pesa ~26 MB) ──
+     Misma técnica que E41 (&range=A{fila}:M). La cota inferior sale de RESUMEN_POZOS y
+     POZOS_HOY: la suma de "muestras" nunca pasa del número real de filas, porque el
+     resumen se salta filas (pozo DESCONOCIDO, filas fuera de orden). */
+  var POZOS_VENTANA_DIAS = 7;
+  var POZOS_MARGEN_FILAS = 50;
+  var POZOS_COMPLETO = false; // true después de pedir la historia completa a mano
+
+  async function fetchPozosDesde(fila) {
+    var url = POZOS_CSV + "&range=A" + fila + ":M&t=" + Date.now();
+    var res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var lines = (await res.text()).split(/\r?\n/).filter(function (l) {
+      return l.trim();
+    });
+    var completo = lines.length && /fecha/i.test(lines[0]);
+    return { lines: completo ? lines.slice(1) : lines, completo: completo };
+  }
+
+  /* Fila desde la que bajar ~7 días, o 0 si el resumen no está disponible */
+  function pozosFilaInicio() {
+    var pr = cache.pozosResumen;
+    if (!pr.dias.length) return 0;
+    var suma = function (lista) {
+      return lista.reduce(function (a, r) {
+        return a + (r.muestras || 0);
+      }, 0);
+    };
+    var total = suma(pr.dias) + suma(pr.hoy);
+    var corte = new Date(Date.now() - POZOS_VENTANA_DIAS * 86400e3).toISOString().slice(0, 10);
+    var ventana =
+      suma(
+        pr.dias.filter(function (r) {
+          return r.fecha >= corte;
+        }),
+      ) + suma(pr.hoy);
+    return Math.max(2, total + 2 - ventana - POZOS_MARGEN_FILAS);
   }
 
   async function loadPozos() {
@@ -264,35 +353,68 @@ const DB = (function () {
     if (cache.pozos.ts && now - cache.pozos.ts < TTL && cache.pozos.rows.length)
       return cache.pozos.rows;
     try {
-      var result = await fetchCSV(POZOS_CSV, false);
-      var newRows = parsePozos(result.rows);
-
-      // Prevent rollback/going backward in time due to Google CDN sync delay
-      var currentLatest = cache.pozos.rows.length ? cache.pozos.rows[cache.pozos.rows.length - 1] : null;
-      var newLatest = newRows.length ? newRows[newRows.length - 1] : null;
-      if (currentLatest && newLatest) {
-        var currentTs = parseDate(currentLatest.ts);
-        var newTs = parseDate(newLatest.ts);
-        if (currentTs && newTs && newTs < currentTs) {
-          console.warn("[DB] Ignored older Pozos data fetched (likely CDN sync lag).");
-          cache.pozos.ts = now;
-          return cache.pozos.rows;
-        }
+      var previas = cache.pozos.rows;
+      var ultima = previas.length ? parseDate(previas[previas.length - 1].ts) : null;
+      if (!POZOS_COMPLETO && (!ultima || now - ultima > POZOS_VENTANA_DIAS * 86400e3)) {
+        cache.pozos.next = 0;
+        previas = [];
       }
 
-      cache.pozos.rows = newRows;
+      var desde;
+      if (cache.pozos.next) {
+        desde = Math.max(2, cache.pozos.next - POZOS_MARGEN_FILAS);
+      } else {
+        await loadPozosResumen();
+        desde = pozosFilaInicio();
+      }
+
+      var r = desde ? await fetchPozosDesde(desde) : await fetchCSV(POZOS_CSV, true);
+      var lineas = desde ? r.lines : r.rows;
+      var siguiente = desde && !r.completo ? desde + lineas.length : 2 + lineas.length;
+
+      // Filas nuevas por posición (varios pozos comparten la misma hora); si el rango vino
+      // completo o es la primera carga, se toma todo
+      var nuevasLineas = lineas;
+      if (previas.length && cache.pozos.next && desde && !r.completo)
+        nuevasLineas = lineas.slice(Math.max(0, cache.pozos.next - desde));
+      var nuevas = parsePozos(nuevasLineas);
+      // Nunca retroceder en el tiempo (CDN de Google atrasado)
+      var corte = previas.length ? parseDate(previas[previas.length - 1].ts) : null;
+      if (corte)
+        nuevas = nuevas.filter(function (row) {
+          var d = parseDate(row.ts);
+          return d && d >= corte;
+        });
+      var filas = r.completo || !previas.length ? nuevas : previas.concat(nuevas);
+
+      cache.pozos.rows = filas;
+      cache.pozos.next = Math.max(cache.pozos.next || 0, siguiente);
       cache.pozos.ts = now;
       try {
         localStorage.setItem("tn_pz", JSON.stringify({
           rows: cache.pozos.rows.slice(-10000),
-          ts: cache.pozos.ts
+          ts: cache.pozos.ts,
+          // Si se recortó, la próxima sesión empieza desde el resumen
+          next: cache.pozos.rows.length > 10000 ? 0 : cache.pozos.next,
         }));
       } catch (e) {}
     } catch (e) {
       console.warn("[DB] Pozos fetch failed:", e.message);
-      var s = safeGet("tn_pz");
-      if (s) Object.assign(cache.pozos, s);
+      if (!cache.pozos.rows.length) {
+        var s = safeGet("tn_pz");
+        if (s) Object.assign(cache.pozos, s);
+      }
     }
+    return cache.pozos.rows;
+  }
+
+  /* Historia completa de todos los pozos (~26 MB), solo cuando el usuario la pide */
+  async function loadPozosCompleto() {
+    var r = await fetchCSV(POZOS_CSV, true);
+    cache.pozos.rows = parsePozos(r.rows);
+    cache.pozos.next = 2 + r.rows.length;
+    cache.pozos.ts = Date.now();
+    POZOS_COMPLETO = true;
     return cache.pozos.rows;
   }
 
@@ -436,6 +558,7 @@ const DB = (function () {
       sinCom: toF(o.horas_sin_com),
       disponibilidad: toF(o.disponibilidad_pct),
       paros: toI(o.paros),
+      muestras: toI(o.muestras),
       rpm: toN(o.rpm_prom),
       corriente: toN(o.corriente_prom),
       estado: o.ultimo_estado,
@@ -663,6 +786,10 @@ const DB = (function () {
     var rows = cache.pozos.rows;
     if (!rows.length) return [];
     var map = {};
+    // Pozos sin lecturas en la ventana descargada: se conocen por el resumen diario
+    cache.pozosResumen.dias.forEach(function (d) {
+      if (d.pozo && d.ultima) map[d.pozo] = { pozo: d.pozo, ts: d.ultima, texto: "" };
+    });
     for (var i = 0; i < rows.length; i++) map[rows[i].pozo] = rows[i];
     return Object.keys(map).map(function (nombre) {
       var r = map[nombre];
@@ -780,6 +907,7 @@ const DB = (function () {
     getERBHistoryRange,
     loadResumen,
     loadPozosResumen,
+    loadPozosCompleto,
     getPozoDias,
     getPozoEventos,
     getPozoHoy,

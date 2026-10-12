@@ -1460,19 +1460,21 @@ function rangeHours(r) {
   return map[r] || 24;
 }
 
-/* Rangos de más de 48 h salen del resumen por hora: pesa mucho menos que la
-   telemetría cruda y cubre toda la historia. Si aún no carga, se usa la cruda. */
+/* La app solo descarga ~26 h de lecturas por minuto. Rangos de más de 24 h, o que caen
+   fuera de esa ventana, salen del resumen por hora, que cubre toda la historia. */
 function erbHistorial(range, customFrom, customTo) {
   const custom = range === "CUSTOM" && customFrom && customTo;
   const to = custom ? customTo : new Date();
   const from = custom ? customFrom : new Date(to - rangeHours(range) * 3600e3);
-  if (to - from > 48 * 3600e3) {
-    const h = DB.getERBResumenHora(from, to);
+  const porHora = () => DB.getERBResumenHora(from, to);
+  if (to - from > 24 * 3600e3) {
+    const h = porHora();
     if (h.length) return h;
   }
-  return custom
+  const crudas = custom
     ? DB.getERBHistoryRange(customFrom, customTo)
     : DB.getERBHistory(rangeHours(range));
+  return crudas.length ? crudas : porHora();
 }
 
 function renderERBDetail(range, customFrom, customTo) {
@@ -2092,17 +2094,31 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
   renderPozoDisp(nombre);
   const latest = DB.getPozoLatest(nombre);
   if (!latest) {
-    el("pd-metrics").innerHTML =
-      '<p style="color:var(--txt3)">Sin datos disponibles.</p>';
+    // La app solo baja 7 días de lecturas; la historia completa se pide a mano
+    el("pd-title").textContent = nombre;
+    el("pd-state").innerHTML = "";
+    el("pd-metrics").innerHTML = `<div class="pz-group pz-sin-datos">
+        <p>${_t("Este pozo no tiene lecturas en los últimos 7 días.")}</p>
+        <button type="button" class="btn-back" id="pd-completo">${_t("Descargar historia completa (~26 MB)")}</button>
+      </div>`;
+    el("pd-completo").onclick = async () => {
+      showLoading(_t("Descargando historia completa de pozos..."));
+      await DB.loadPozosCompleto().catch(() => {});
+      hideLoading();
+      renderPozoDetail(nombre, range, customFrom, customTo);
+    };
     el("pd-charts").innerHTML = "";
     return;
   }
 
   const hours = rangeHours(range);
+  // Un pozo que ya no reporta se muestra respecto a su última lectura, no respecto a hoy
+  const fin = DB.parseDate(latest.ts) || new Date();
+  const ancla = DB.isStale(latest.ts) ? fin : new Date();
   const hist =
     range === "CUSTOM" && customFrom && customTo
       ? DB.getPozoHistoryRange(nombre, customFrom, customTo)
-      : DB.getPozoHistory(nombre, hours);
+      : DB.getPozoHistoryRange(nombre, new Date(ancla - hours * 3600e3), ancla);
   const stale = DB.isStale(latest.ts);
   const isNormal = latest.texto === "Normal";
 
@@ -2131,7 +2147,7 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
     second: "2-digit",
   });
 
-  const stats = pozoEstadisticas(nombre);
+  const stats = pozoEstadisticas(nombre, fin);
   const enParo = latest.tipo === "ALARMA";
   renderPozoEstado(nombre, latest, stale, enParo, stats);
 
@@ -2176,11 +2192,11 @@ const POZO_GRUPOS = [
 ];
 const POZO_VARS = POZO_GRUPOS.flatMap((g) => g.vars.map((v) => ({ ...v, grupo: g.titulo })));
 
-/* Rango habitual de cada variable: percentiles 5–95 de los últimos 30 días con el pozo operando.
-   Una variable que en 30 días casi siempre reportó 0 (menos del 1 % de lecturas distintas de 0)
+/* Rango habitual de cada variable: percentiles 5–95 de las lecturas descargadas (últimos 7 días)
+   con el pozo operando. Una variable que en ese lapso casi siempre reportó 0 (menos del 1 % de lecturas distintas de 0)
    se toma como señal no conectada. */
-function pozoEstadisticas(nombre) {
-  const filas = DB.getPozoHistory(nombre, 720).filter((r) => r.tipo !== "ALARMA");
+function pozoEstadisticas(nombre, fin) {
+  const filas = DB.getPozoHistoryRange(nombre, new Date(fin - 7 * 86400e3), fin).filter((r) => r.tipo !== "ALARMA");
   const out = {};
   POZO_VARS.forEach((v) => {
     const vals = filas.map((r) => r[v.key]).filter((x) => x != null).sort((a, b) => a - b);
@@ -2205,7 +2221,7 @@ function renderPozoEstado(nombre, latest, stale, enParo, stats) {
   }
   const sinSenal = POZO_VARS.filter((v) => !stats[v.key].senal).map((v) => `${_t(v.nombre)} (${_t(v.grupo).toLowerCase()})`);
   if (sinSenal.length)
-    items.push(["falla", `${_t("Señales que no reportan en 30 días")}: ${sinSenal.join(", ")}`]);
+    items.push(["falla", `${_t("Señales que no reportan en 7 días")}: ${sinSenal.join(", ")}`]);
   const icono =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
   const operando =
@@ -2241,7 +2257,7 @@ function pozoGauge(v, valor, st, inactivo) {
   if (!st.senal) {
     cls += " sin-senal";
     cuerpo += `<text class="g-val g-val-sin" x="${cx}" y="${cy + 6}" text-anchor="middle">${_t("sin señal")}</text>`;
-    pie = _t("No reporta en 30 días");
+    pie = _t("No reporta en 7 días");
   } else {
     if (st.p5 != null && st.p95 > st.p5) cuerpo += `<path class="g-band" d="${arco(ang(st.p5), ang(st.p95))}"/>`;
     const fuera = valor != null && st.p5 != null && (valor < st.p5 - (max - min) * 0.01 || valor > st.p95 + (max - min) * 0.01);
@@ -2278,7 +2294,7 @@ function renderPozoTendencias(hist, stats) {
   _pzPlots = [];
   _pzPlotsRO = null;
   box.innerHTML = "";
-  el("pd-trend-sub").textContent = _t("Los huecos son paros o pérdidas de comunicación");
+  el("pd-trend-sub").textContent = _t("Hasta 7 días · los huecos son paros o pérdidas de comunicación");
   if (typeof uPlot === "undefined") {
     box.innerHTML = `<p class="cierre-nota">${_t("No se pudo cargar la librería de gráficas. Revise la conexión y recargue.")}</p>`;
     return;
