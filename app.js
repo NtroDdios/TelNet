@@ -918,53 +918,9 @@ function fmtStatusPozo(s) {
   return `<span class="sp sp-gray"><span class="sp-dot">●</span>${_t("Sin conexión")}</span>`;
 }
 
-function sampleSeries(rows, key, maxPts = 120) {
-  if (!rows.length) return { labels: [], vals: [] };
-  const step = Math.max(1, Math.floor(rows.length / maxPts));
-  const out = rows.filter((_, i) => i % step === 0);
-  return {
-    labels: out.map((r) => {
-      const ts = (r.ts || "").trim();
-      if (!ts) return "";
-      // If ts has a date part, show date+time for multi-day data
-      const parts = ts.split(" ");
-      if (parts.length >= 2) {
-        // Show date (DD/MM) + time (HH:MM) for clarity
-        const datePart = parts[0]; // e.g. 15/06/2026 or 2026-06-15
-        const timePart = parts[1].substring(0, 5); // HH:MM
-
-        // Try parsing DD/MM/YYYY
-        const dMatch = datePart.match(/(\d+)[-\/](\d+)[-\/](\d+)/);
-        if (dMatch) {
-          // If first part is > 12, it's definitely DD, if third is > 31 it's YYYY at the end.
-          // Let's just assume DD/MM/YYYY for Mexico locale, or YYYY-MM-DD.
-          if (dMatch[1].length === 4) {
-            // YYYY-MM-DD -> DD/MM
-            return `${dMatch[3]}/${dMatch[2]} ${timePart}`;
-          } else {
-            // DD/MM/YYYY -> DD/MM
-            return `${dMatch[1]}/${dMatch[2]} ${timePart}`;
-          }
-        }
-        return `${datePart} ${timePart}`;
-      }
-      return ts.substring(0, 5);
-    }),
-    vals: out.map((r) => (r[key] == null ? null : r[key])),
-  };
-}
-
 /* ERB E41: barriles por metro de nivel de TV-601, TV-602 y TV-741 */
 const ERB_BBL_POR_M = [1092.953, 1066.058202, 840.1914];
 const ERB_NIV_KEYS = ["niv601", "niv602", "niv741"];
-
-function avg(rows, key) {
-  const vals = rows
-    .map((r) => parseFloat(r[key]))
-    .filter((v) => !isNaN(v));
-  if (!vals.length) return 0;
-  return vals.reduce((a, v) => a + v, 0) / vals.length;
-}
 
 /* ──────────────────────────────────────────────
    CHART REGISTRY
@@ -987,52 +943,6 @@ const CHR = {
     this._map[id] = new Chart(ctx, cfg);
   },
 };
-
-const CHART_OPTS = (color) => ({
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: { mode: "index", intersect: false },
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      backgroundColor: "rgba(13,21,32,.95)",
-      borderColor: "rgba(255,255,255,.1)",
-      borderWidth: 1,
-      titleColor: "#7b8ea8",
-      bodyColor: "#e8edf5",
-      padding: 10,
-      callbacks: {
-        title: (items) => items[0]?.label || "",
-      },
-    },
-  },
-  scales: {
-    x: {
-      grid: { color: "rgba(255,255,255,.04)" },
-      ticks: { color: "#4a5a6e", font: { size: 10 }, maxTicksLimit: 7 },
-    },
-    y: {
-      grid: { color: "rgba(255,255,255,.05)" },
-      ticks: { color: "#4a5a6e", font: { size: 10 } },
-      beginAtZero: false,
-    },
-  },
-  animation: { duration: 500 },
-});
-
-function makeDataset(vals, color) {
-  return {
-    data: vals,
-    borderColor: color,
-    backgroundColor: color + "14",
-    fill: true,
-    borderWidth: 2,
-    tension: 0.4,
-    pointRadius: 0,
-    pointHoverRadius: 5,
-    pointHoverBackgroundColor: color,
-  };
-}
 
 /* ──────────────────────────────────────────────
    ROUTER
@@ -2136,171 +2046,239 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
     second: "2-digit",
   });
 
-  // 7 Metric cards (PTP, Torque, Corriente, Temperatura, Voltaje L-L, Frecuencia, RPM)
-  const avgPTP = avg(hist, "ptp");
-  const avgPAR = avg(hist, "par");
-  const avgI = avg(hist, "I");
-  const avgTemp = avg(hist, "temp");
-  const avgVLL = avg(hist, "vll");
-  const avgFreq = avg(hist, "freq");
-  const avgGRPM = avg(hist, "gRPM");
+  const stats = pozoEstadisticas(nombre);
+  const enParo = latest.tipo === "ALARMA";
+  renderPozoEstado(nombre, latest, stale, enParo, stats);
 
-  function trend(cur, mean) {
-    if (cur == null || !mean) return `<span class="mc-trend">—</span>`;
-    const pct = ((cur - mean) / mean) * 100;
-    const cls = pct >= 0 ? "up" : "dn";
-    return `<span class="mc-trend ${cls}">${pct >= 0 ? "↑" : "↓"} ${Math.abs(pct).toFixed(1)}%</span>`;
+  // Con el pozo en paro o sin comunicación los gauges muestran la última lectura, atenuados
+  const inactivo = enParo || stale;
+  const nota =
+    latest.valsTs && latest.valsTs !== latest.ts
+      ? `<p class="pz-nota">${_t("Valores de la última lectura con el pozo operando")}: ${esc(latest.valsTs)}</p>`
+      : "";
+  el("pd-metrics").innerHTML =
+    POZO_GRUPOS.map(
+      (g) => `<section class="pz-group">
+        <h3 class="box-title">${_t(g.titulo)}</h3>
+        <div class="gauges">${g.vars.map((v) => pozoGauge(v, latest[v.key], stats[v.key], inactivo)).join("")}</div>
+      </section>`,
+    ).join("") + nota;
+
+  renderPozoTendencias(hist, stats);
+}
+
+/* ── SCADA de pozo ── */
+const POZO_GRUPOS = [
+  {
+    titulo: "Variador y bomba",
+    vars: [
+      { key: "rpm", nombre: "Velocidad", unidad: "RPM", d: 1 },
+      { key: "par", nombre: "Torque", unidad: "lb-ft", d: 0 },
+      { key: "I", nombre: "Corriente", unidad: "A", d: 1 },
+      { key: "V", nombre: "Voltaje de salida", unidad: "V", d: 0 },
+      { key: "ptp", nombre: "Presión en TP", unidad: "PSI", d: 0 },
+    ],
+  },
+  {
+    titulo: "Generador",
+    vars: [
+      { key: "freq", nombre: "Frecuencia", unidad: "Hz", d: 1, escala: [55, 65] },
+      { key: "vll", nombre: "Voltaje L-L", unidad: "V", d: 0, escala: [400, 480] },
+      { key: "gRPM", nombre: "Velocidad", unidad: "RPM", d: 0, escala: [1700, 1900] },
+      { key: "temp", nombre: "Temperatura", unidad: "°C", d: 0, escala: [0, 110] },
+    ],
+  },
+];
+const POZO_VARS = POZO_GRUPOS.flatMap((g) => g.vars.map((v) => ({ ...v, grupo: g.titulo })));
+
+/* Rango habitual de cada variable: percentiles 5–95 de los últimos 30 días con el pozo operando.
+   Una variable que en 30 días casi siempre reportó 0 (menos del 1 % de lecturas distintas de 0)
+   se toma como señal no conectada. */
+function pozoEstadisticas(nombre) {
+  const filas = DB.getPozoHistory(nombre, 720).filter((r) => r.tipo !== "ALARMA");
+  const out = {};
+  POZO_VARS.forEach((v) => {
+    const vals = filas.map((r) => r[v.key]).filter((x) => x != null).sort((a, b) => a - b);
+    const q = (p) => vals[Math.min(vals.length - 1, Math.floor(vals.length * p))];
+    out[v.key] = {
+      senal: vals.filter((x) => x !== 0).length >= Math.max(1, vals.length * 0.01),
+      p5: vals.length ? q(0.05) : null,
+      p95: vals.length ? q(0.95) : null,
+      p99: vals.length ? q(0.99) : null,
+    };
+  });
+  return out;
+}
+
+function renderPozoEstado(nombre, latest, stale, enParo, stats) {
+  const items = [];
+  const hoy = DB.getPozoHoy(nombre);
+  if (stale) items.push(["critica", `${_t("Sin comunicación desde")} ${latest.ts}`]);
+  else if (enParo) {
+    const desde = hoy && /^PARO desde /.test(hoy.estado) ? hoy.estado.replace("PARO desde ", "") : latest.ts;
+    items.push(["alta", `${_t("En paro desde")} ${desde}: ${latest.texto || _t("paro")}`]);
   }
-  // Readings are null when the last report was an alarm with no values
-  const num = (v, d) =>
-    v == null
-      ? "—"
-      : v.toFixed(d).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  const sinSenal = POZO_VARS.filter((v) => !stats[v.key].senal).map((v) => `${_t(v.nombre)} (${_t(v.grupo).toLowerCase()})`);
+  if (sinSenal.length)
+    items.push(["falla", `${_t("Señales que no reportan en 30 días")}: ${sinSenal.join(", ")}`]);
+  const icono =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+  const operando =
+    !stale && !enParo
+      ? `<div class="alm alm-ok" role="status"><span class="pz-dot"></span>${_t("Operando")} · ${_t("última lectura")} ${esc(latest.ts)}</div>`
+      : "";
+  el("pd-state").innerHTML =
+    operando + items.map(([c, txt]) => `<div class="alm alm-${c}" role="status">${icono}<span>${esc(txt)}</span></div>`).join("");
+}
 
-  el("pd-metrics").innerHTML = `
-    <div class="metric-card">
-      <div class="mc-top">
-        <span class="mc-icon mc-presion">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
-        </span>
-        <span class="mc-label">${_t("Presión en TP")}</span>
-      </div>
-      <div class="mc-val">${num(latest.ptp, 0)}<span>PSI</span></div>
-      <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgPTP.toFixed(0)} PSI</span>${trend(latest.ptp, avgPTP)}</div>
-    </div>
-    <div class="metric-card">
-      <div class="mc-top">
-        <span class="mc-icon mc-torque">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-        </span>
-        <span class="mc-label">${_t("Torque")}</span>
-      </div>
-      <div class="mc-val">${num(latest.par, 0)}<span>lb-ft</span></div>
-      <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgPAR.toFixed(0)} lb-ft</span>${trend(latest.par, avgPAR)}</div>
-    </div>
-    <div class="metric-card">
-      <div class="mc-top">
-        <span class="mc-icon mc-corriente">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
-        </span>
-        <span class="mc-label">${_t("Corriente")}</span>
-      </div>
-      <div class="mc-val">${num(latest.I, 1)}<span>A</span></div>
-      <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgI.toFixed(1)} A</span>${trend(latest.I, avgI)}</div>
-    </div>
-    <div class="metric-card">
-      <div class="mc-top">
-        <span class="mc-icon mc-temp">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
-        </span>
-        <span class="mc-label">${_t("Gen - Temperatura")}</span>
-      </div>
-      <div class="mc-val">${num(latest.temp, 1)}<span>°C</span></div>
-      <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgTemp.toFixed(1)} °C</span>${trend(latest.temp, avgTemp)}</div>
-    </div>
-    <div class="metric-card">
-      <div class="mc-top">
-        <span class="mc-icon mc-vll">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="10" rx="2" ry="2"/><line x1="22" y1="12" x2="22" y2="12"/><line x1="6" y1="11" x2="10" y2="11"/><line x1="14" y1="11" x2="18" y2="11"/></svg>
-        </span>
-        <span class="mc-label">${_t("Gen - Voltaje L-L")}</span>
-      </div>
-      <div class="mc-val">${num(latest.vll, 1)}<span>V</span></div>
-      <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgVLL.toFixed(1)} V</span>${trend(latest.vll, avgVLL)}</div>
-    </div>
-    <div class="metric-card">
-      <div class="mc-top">
-        <span class="mc-icon mc-freq">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        </span>
-        <span class="mc-label">${_t("Gen - Frecuencia")}</span>
-      </div>
-      <div class="mc-val">${num(latest.freq, 1)}<span>Hz</span></div>
-      <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgFreq.toFixed(1)} Hz</span>${trend(latest.freq, avgFreq)}</div>
-    </div>
-    <div class="metric-card">
-      <div class="mc-top">
-        <span class="mc-icon mc-gRPM">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
-        </span>
-        <span class="mc-label">${_t("Gen - RPM")}</span>
-      </div>
-      <div class="mc-val">${num(latest.gRPM, 0)}<span>RPM</span></div>
-      <div class="mc-bottom"><span class="mc-avg">${_t("Promedio")}: ${avgGRPM.toFixed(0)} RPM</span>${trend(latest.gRPM, avgGRPM)}</div>
-    </div>`;
+/* Redondea hacia arriba a 1, 2, 2.5 o 5 × 10ⁿ */
+function techoRedondo(x) {
+  if (!(x > 0)) return 1;
+  const e = Math.pow(10, Math.floor(Math.log10(x)));
+  return [1, 2, 2.5, 5, 10].map((m) => m * e).find((m) => m >= x);
+}
 
-  // Process charts (2x2)
-  const chartDefs = [
-    { title: "Presión en TP (PSI)", key: "ptp", color: "#4d9ffc" },
-    { title: "Torque (lb-ft)", key: "par", color: "#c084fc" },
-    { title: "Corriente (A)", key: "I", color: "#2ecc71" },
-    { title: "Temperatura (°C)", key: "temp", color: "#f5a623" },
-  ];
+/* Gauge de 240°: pista gris, rango habitual sombreado, aguja neutra; color solo fuera de rango */
+function pozoGauge(v, valor, st, inactivo) {
+  const [min, max] = v.escala || [0, techoRedondo(Math.max(st.p99 || 0, valor || 0) * 1.25)];
+  const cx = 60, cy = 58, r = 44;
+  const ang = (x) => 210 - (240 * (Math.min(max, Math.max(min, x)) - min)) / (max - min);
+  const pto = (a, rr) => [cx + rr * Math.cos((a * Math.PI) / 180), cy - rr * Math.sin((a * Math.PI) / 180)];
+  const arco = (a0, a1) => {
+    const [x0, y0] = pto(a0, r);
+    const [x1, y1] = pto(a1, r);
+    return `M${x0.toFixed(1)} ${y0.toFixed(1)} A${r} ${r} 0 ${a0 - a1 > 180 ? 1 : 0} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+  };
+  const fmtN = (x, d) => (x == null ? "—" : x.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }));
+  let cls = "gauge";
+  let cuerpo = `<path class="g-track" d="${arco(210, -30)}"/>`;
+  let pie;
+  if (!st.senal) {
+    cls += " sin-senal";
+    cuerpo += `<text class="g-val g-val-sin" x="${cx}" y="${cy + 6}" text-anchor="middle">${_t("sin señal")}</text>`;
+    pie = _t("No reporta en 30 días");
+  } else {
+    if (st.p5 != null && st.p95 > st.p5) cuerpo += `<path class="g-band" d="${arco(ang(st.p5), ang(st.p95))}"/>`;
+    const fuera = valor != null && st.p5 != null && (valor < st.p5 - (max - min) * 0.01 || valor > st.p95 + (max - min) * 0.01);
+    if (fuera && !inactivo) cls += " fuera";
+    if (valor != null) {
+      const [nx, ny] = pto(ang(valor), r - 8);
+      cuerpo += `<line class="g-needle" x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}"/><circle class="g-hub" cx="${cx}" cy="${cy}" r="4"/>`;
+    }
+    cuerpo += `<text class="g-val" x="${cx}" y="${cy + 30}" text-anchor="middle">${fmtN(valor, v.d)}</text>`;
+    pie = st.p5 != null ? `${_t("Habitual")} ${fmtN(st.p5, v.d)}–${fmtN(st.p95, v.d)}` : "";
+    if (fuera && !inactivo) pie = `${_t("Fuera de lo habitual")} (${fmtN(st.p5, v.d)}–${fmtN(st.p95, v.d)})`;
+  }
+  if (inactivo) cls += " inactivo";
+  const [mx0, my0] = pto(210, r + 2);
+  const [mx1, my1] = pto(-30, r + 2);
+  return `<figure class="${cls}">
+    <figcaption><span>${_t(v.nombre)}</span><small>${v.unidad}</small></figcaption>
+    <svg viewBox="0 0 120 104" role="img" aria-label="${_t(v.nombre)}: ${fmtN(valor, v.d)} ${v.unidad}">
+      ${cuerpo}
+      <text class="g-lim" x="${mx0.toFixed(1)}" y="${(my0 + 14).toFixed(1)}" text-anchor="middle">${fmtN(min, 0)}</text>
+      <text class="g-lim" x="${mx1.toFixed(1)}" y="${(my1 + 14).toFixed(1)}" text-anchor="middle">${fmtN(max, 0)}</text>
+    </svg>
+    <p class="g-pie">${pie}</p>
+  </figure>`;
+}
 
-  // Generator charts
-  const genChartDefs = [
-    { title: "Voltaje L-L (V)", key: "vll", color: "#f1c40f" },
-    { title: "Frecuencia (Hz)", key: "freq", color: "#00d2d3" },
-    { title: "RPM Generador", key: "gRPM", color: "#f368e0" },
-  ];
-
-  const processHTML = chartDefs
-    .map(
-      (c, i) =>
-        `<div class="chart-card">
-      <div class="chart-card-title">${_t(c.title)}</div>
-      <canvas id="pc-${i}" class="main-chart" height="200"></canvas>
-      <div class="chart-legend">
-        <span class="chart-legend-line" style="background:${c.color}"></span>
-        ${_t(c.title)}
-      </div>
-    </div>`,
-    )
-    .join("");
-
-  const genHTML = genChartDefs
-    .map(
-      (c, i) =>
-        `<div class="chart-card">
-      <div class="chart-card-title">${_t(c.title)}</div>
-      <canvas id="gc-${i}" class="main-chart" height="200"></canvas>
-      <div class="chart-legend">
-        <span class="chart-legend-line" style="background:${c.color}"></span>
-        ${_t(c.title)}
-      </div>
-    </div>`,
-    )
-    .join("");
-
-  el("pd-charts").innerHTML =
-    processHTML +
-    `<div class="chart-section-header">${_t("Generador")}</div>` +
-    `<div class="charts-3col">${genHTML}</div>`;
-
-  chartDefs.forEach((c, i) => {
-    const { labels, vals } = sampleSeries(hist, c.key);
-    setTimeout(() => {
-      CHR.create(`pc-${i}`, {
-        type: "line",
-        data: { labels, datasets: [makeDataset(vals, c.color)] },
-        options: CHART_OPTS(c.color),
-      });
-    }, 50 * i);
+/* Pequeños múltiplos con uPlot: una gráfica por variable, cursor sincronizado */
+let _pzPlots = [];
+let _pzPlotsRO = null;
+function renderPozoTendencias(hist, stats) {
+  const box = el("pd-charts");
+  if (_pzPlotsRO) _pzPlotsRO.disconnect();
+  _pzPlots.forEach((p) => p.destroy());
+  _pzPlots = [];
+  _pzPlotsRO = null;
+  box.innerHTML = "";
+  el("pd-trend-sub").textContent = _t("Los huecos son paros o pérdidas de comunicación");
+  if (typeof uPlot === "undefined") {
+    box.innerHTML = `<p class="cierre-nota">${_t("No se pudo cargar la librería de gráficas. Revise la conexión y recargue.")}</p>`;
+    return;
+  }
+  const xs = [];
+  const filas = [];
+  hist.forEach((r) => {
+    const t = DB.parseDate(r.ts);
+    if (!t) return;
+    xs.push(t.getTime() / 1000);
+    filas.push(r);
   });
+  if (!xs.length) {
+    box.innerHTML = `<p class="cierre-nota">${_t("Sin lecturas en este rango.")}</p>`;
+    return;
+  }
+  const css = getComputedStyle(document.body);
+  const tinta = css.getPropertyValue("--txt2").trim();
+  const reja = css.getPropertyValue("--border2").trim();
+  const fuente = '11px "Barlow Semi Condensed", Inter, sans-serif';
+  const eje = { stroke: tinta, font: fuente, grid: { stroke: reja, width: 1 }, ticks: { show: false } };
+  const largo = xs[xs.length - 1] - xs[0] > 2 * 86400;
+  const dosDig = (n) => String(n).padStart(2, "0");
+  const ejeX = {
+    ...eje,
+    values: (u, vals) =>
+      vals.map((v) => {
+        const f = new Date(v * 1000);
+        if (largo || (f.getHours() === 0 && f.getMinutes() === 0)) return `${dosDig(f.getDate())}/${dosDig(f.getMonth() + 1)}`;
+        return `${dosDig(f.getHours())}:${dosDig(f.getMinutes())}`;
+      }),
+  };
 
-  genChartDefs.forEach((c, i) => {
-    const { labels, vals } = sampleSeries(hist, c.key);
-    setTimeout(
-      () => {
-        CHR.create(`gc-${i}`, {
-          type: "line",
-          data: { labels, datasets: [makeDataset(vals, c.color)] },
-          options: CHART_OPTS(c.color),
-        });
+  POZO_VARS.filter((v) => stats[v.key].senal).forEach((v) => {
+    const ys = filas.map((r) => r[v.key]);
+    const card = document.createElement("div");
+    card.className = "pz-trend";
+    const ultimo = [...ys].reverse().find((y) => y != null);
+    card.innerHTML = `<div class="pz-trend-head"><span>${_t(v.nombre)} <small>${v.unidad} · ${_t(v.grupo).toLowerCase()}</small></span><b class="pz-trend-val">${ultimo == null ? "—" : ultimo.toFixed(v.d)}</b></div><div class="pz-trend-plot"></div>`;
+    box.appendChild(card);
+    const plotBox = card.querySelector(".pz-trend-plot");
+    const valEl = card.querySelector(".pz-trend-val");
+    const plot = new uPlot(
+      {
+        width: plotBox.clientWidth || 300,
+        height: 130,
+        legend: { show: false },
+        cursor: { sync: { key: "pozo" }, y: false, points: { size: 7 } },
+        // Escala mínima de ±5 % del valor para no convertir en "ruido" variaciones de décimas
+        scales: {
+          y: {
+            range: v.escala
+              ? v.escala
+              : (u, min, max) => {
+                  const medio = (min + max) / 2;
+                  const media = Math.max((max - min) / 2 * 1.15, Math.abs(medio) * 0.05, 0.5);
+                  return [Math.max(0, medio - media), medio + media];
+                },
+          },
+        },
+        axes: [ejeX, { ...eje, size: 46 }],
+        series: [{}, { stroke: ERB_PLUMAS[0], width: 1.75 }],
+        hooks: {
+          // El valor del encabezado sigue al cursor; sin cursor muestra la última lectura
+          setCursor: [
+            (u) => {
+              const i = u.cursor.idx;
+              const y = i == null ? ultimo : ys[i];
+              valEl.textContent = y == null ? "—" : y.toFixed(v.d);
+            },
+          ],
+        },
       },
-      50 * (chartDefs.length + i),
+      [xs, ys],
+      plotBox,
     );
+    _pzPlots.push(plot);
   });
+  _pzPlotsRO = new ResizeObserver(() => {
+    _pzPlots.forEach((p) => {
+      const w = p.root.parentElement.clientWidth;
+      if (w && Math.abs(w - p.width) > 1) p.setSize({ width: w, height: 130 });
+    });
+  });
+  _pzPlotsRO.observe(box);
 }
 
 /* Disponibilidad del pozo por día operativo (05:00 → 05:00) y eventos de paro */

@@ -2725,6 +2725,46 @@ body.light .scada {
   .face-main { font-size: 2rem; }
 }
 
+/* SCADA de pozo: gauges y pequeños múltiplos */
+.pz-scada { margin-top: .25rem; }
+.pz-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; margin-top: 5px; }
+.pz-groups { display: grid; grid-template-columns: 5fr 4fr; gap: 1rem; }
+.pz-group { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 1rem 1.1rem; min-width: 0; }
+.pz-nota { grid-column: 1 / -1; font-size: .75rem; color: var(--txt3); }
+.gauges { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: .75rem 1rem; }
+.gauge { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.gauge figcaption { display: flex; align-items: baseline; gap: .3rem; font-size: .78rem; color: var(--txt2); text-align: center; }
+.gauge figcaption small { font-size: .68rem; color: var(--txt3); }
+.gauge svg { width: 100%; max-width: 150px; height: auto; font-family: var(--num); }
+.g-track { fill: none; stroke: var(--bg4); stroke-width: 9; }
+.g-band { fill: none; stroke: var(--m-steel); stroke-width: 9; opacity: .55; }
+.g-needle { stroke: var(--txt); stroke-width: 2.5; stroke-linecap: round; }
+.g-hub { fill: var(--txt); }
+.g-val { fill: var(--txt); font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.g-val-sin { fill: var(--txt3); font-size: 13px; font-weight: 500; }
+.g-lim { fill: var(--txt3); font-size: 9.5px; }
+.g-pie { font-size: .68rem; color: var(--txt3); text-align: center; min-height: 1em; }
+.gauge.fuera .g-needle, .gauge.fuera .g-hub { stroke: var(--st-baja); fill: var(--st-baja); }
+.gauge.fuera .g-val { fill: var(--st-baja); }
+.gauge.fuera .g-pie { color: var(--st-baja); }
+.gauge.sin-senal .g-track { stroke-dasharray: 3 4; }
+.gauge.inactivo svg { opacity: .45; }
+
+.pz-trends { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem 1.25rem; contain: inline-size; }
+.pz-trend { min-width: 0; }
+.pz-trend-head { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; font-size: .8rem; }
+.pz-trend-head small { color: var(--txt3); font-size: .7rem; }
+.pz-trend-val { font-family: var(--num); font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pz-trend-plot { width: 100%; overflow: hidden; }
+
+@media (max-width: 1100px) {
+  .pz-groups { grid-template-columns: 1fr; }
+}
+@media (max-width: 660px) {
+  .gauges { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pz-trends { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* uPlot 1.6.32 (MIT): estilos base adaptados al tema */
 .uplot, .uplot *, .uplot *::before, .uplot *::after { box-sizing: border-box; }
 .uplot { font-family: "Barlow Semi Condensed", Inter, sans-serif; line-height: 1.5; width: min-content; }
