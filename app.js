@@ -1041,92 +1041,177 @@ function on(view, fn) {
    VIEW: HOME
 ────────────────────────────────────────────── */
 on("home", async () => {
-  // Load data in background (don't block the view)
+  // Muestra lo que haya en caché y actualiza en segundo plano
+  updateHomeStats();
   Promise.all([
     DB.loadERB().catch(() => {}),
     DB.loadPozos().catch(() => {}),
-  ]).then(() => {
-    updateHomeStats();
-  });
-
-  // Show whatever is cached immediately while fresh data loads
-  updateHomeStats();
+    DB.loadPozosResumen(),
+  ]).then(updateHomeStats);
 });
 
+/* "Hace 3 min", "Hoy, 14:32" o "24 Oct, 14:32" */
+function haceCuanto(f) {
+  if (!f) return _t("Sin datos");
+  const min = Math.floor((Date.now() - f) / 60000);
+  if (min < 1) return _t("Hace un momento");
+  if (min < 60) return `${_t("Hace")} ${min} min`;
+  const hh = String(f.getHours()).padStart(2, "0");
+  const mm = String(f.getMinutes()).padStart(2, "0");
+  if (f.toDateString() === new Date().toDateString()) return `${_t("Hoy")}, ${hh}:${mm}`;
+  const meses = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+  return `${f.getDate()} ${meses[f.getMonth()]}, ${hh}:${mm}`;
+}
+
+/* Un pozo que no reporta en más de 7 días se lista aparte como inactivo, sin alarma */
+const POZO_INACTIVO_MS = 7 * 86400e3;
+
+/* Tablero de estado de campo: alarmas, ERB E41 y cada pozo con su disponibilidad del día */
 function updateHomeStats() {
-  const lastUpdateEl = document.getElementById("home-last-update");
-  const devicesEl = document.getElementById("home-devices-count");
-  if (!lastUpdateEl || !devicesEl) return;
-
-  // ── Dispositivos conectados ──
-  // Count unique active pozos + ERB stations
+  const box = el("home-board");
+  if (!box) return;
+  const d = DB.getERBDetalle();
   const pozos = DB.getPozos();
-  const estaciones = DB.getEstaciones();
-  const activePozos = pozos.filter((p) => p.estado === "online").length;
-  const activeERB = estaciones.filter(
-    (e) => e.estado === "online" || e.estado === "warning"
-  ).length;
-  const totalActive = activePozos + activeERB;
-  const totalAll = pozos.length + estaciones.length;
-
-  if (totalAll === 0) {
-    devicesEl.textContent = _t("Sin datos");
-  } else {
-    devicesEl.textContent = `${totalActive} ${_t("activos")} / ${totalAll} ${_t("total")}`;
+  if (!d && !pozos.length) {
+    box.innerHTML = `<p class="hb-cargando">${_t("Cargando estado de campo…")}</p>`;
+    return;
   }
 
-  // ── Última actualización ──
-  // Pick the most recent timestamp from ERB or Pozos
-  let latestDate = null;
+  const alarmas = [];
+  let reportando = 0;
+  let total = 0;
+  let ultimo = null;
+  const registrar = (ts) => {
+    const f = DB.parseDate(ts);
+    if (f && (!ultimo || f > ultimo)) ultimo = f;
+    return f;
+  };
 
-  const latestERB = DB.getLatestERB();
-  if (latestERB && latestERB.ts) {
-    const d = DB.parseDate(latestERB.ts);
-    if (d) latestDate = d;
+  // ── ERB E41 ──
+  let erbHtml = "";
+  if (d) {
+    total++;
+    registrar(d.ts);
+    const fresco = !DB.isStale(d.ts);
+    if (fresco) reportando++;
+    else alarmas.push(["critica", `ERB E41: ${_t("sin datos desde")} ${d.ts}`]);
+    const ultimas = DB.getERBUltimas(90);
+    const tanks = d.tanks.map((t, i) => erbTanque(t, i, d, ultimas));
+    tanks.forEach((t) => {
+      if (t.estado === "alta") alarmas.push(["alta", `${t.nombre}: ${_t("nivel alto")} (${t.pct.toFixed(0)} %)`]);
+      if (t.estado === "baja") alarmas.push(["aviso", `${t.nombre}: ${_t("nivel bajo")} (${t.pct.toFixed(0)} %)`]);
+      if (t.estado === "falla") alarmas.push(["falla", `${t.nombre}: ${_t("sin lectura de nivel")}`]);
+    });
+    const vivos = tanks.filter((t) => !t.falla);
+    const inv = vivos.reduce((a, t) => a + t.bbl, 0);
+    const conTasa = vivos.filter((t) => t.tasa != null);
+    const neto = conTasa.length ? conTasa.reduce((a, t) => a + t.tasa, 0) : null;
+    erbHtml = `
+      <button type="button" class="hb-erb" data-ir="erb-detail" data-nombre="ERB E41">
+        <span class="hb-erb-head">
+          <span class="hb-nombre">ERB E41</span>
+          <span class="hb-chip ${fresco ? "ok" : "off"}">${fresco ? _t("En línea") : _t("Sin datos")}</span>
+        </span>
+        <span class="hb-tanques">${tanks
+          .map(
+            (t) => `<span class="hb-tq est-${t.estado}">
+              <span class="hb-tq-body"><i style="height:${t.falla ? 0 : Math.min(100, t.pct).toFixed(0)}%"></i></span>
+              <b>${t.falla ? "—" : t.pct.toFixed(0) + " %"}</b>
+              <small>${esc(t.nombre)}</small>
+            </span>`,
+          )
+          .join("")}</span>
+        <span class="hb-erb-nums">
+          <span><span class="kpi-val">${fmtBbl(inv)}<small>bbl</small></span><span class="kpi-sub">${_t("inventario")}</span></span>
+          <span><span class="kpi-val">${fmtSigno(neto)}<small>bbl/h</small></span><span class="kpi-sub">${_t("balance, última hora")}</span></span>
+        </span>
+      </button>`;
   }
 
+  // ── Pozos ──
+  const activos = [];
+  const inactivos = [];
   pozos.forEach((p) => {
-    if (p.ts) {
-      const d = DB.parseDate(p.ts);
-      if (d && (!latestDate || d > latestDate)) {
-        latestDate = d;
-      }
+    const f = registrar(p.ts);
+    if (!f || Date.now() - f > POZO_INACTIVO_MS) {
+      inactivos.push(p);
+      return;
     }
-  });
-
-  if (!latestDate) {
-    lastUpdateEl.textContent = _t("Sin datos");
-  } else {
-    const now = new Date();
-    const diffMs = now - latestDate;
-    const diffMin = Math.floor(diffMs / 60000);
-
-    let timeStr;
-    if (diffMin < 1) {
-      timeStr = _t("Hace un momento");
-    } else if (diffMin < 60) {
-      timeStr = `${_t("Hace")} ${diffMin} min`;
+    total++;
+    const lat = p.latest || {};
+    const hoy = DB.getPozoHoy(p.nombre);
+    const stale = DB.isStale(p.ts);
+    const paro = !stale && lat.tipo === "ALARMA";
+    let estado = "ok";
+    let texto = _t("Operando");
+    if (stale) {
+      estado = "off";
+      texto = `${_t("Sin comunicación desde")} ${haceCuanto(f).replace(/^Hace/, "hace")}`;
+      alarmas.push(["aviso", `${p.nombre}: ${_t("sin comunicación desde")} ${p.ts}`]);
     } else {
-      // Format: "Hoy, 14:32" or "24 Jun, 14:32"
-      const isToday =
-        latestDate.getDate() === now.getDate() &&
-        latestDate.getMonth() === now.getMonth() &&
-        latestDate.getFullYear() === now.getFullYear();
-      const hh = String(latestDate.getHours()).padStart(2, "0");
-      const mm = String(latestDate.getMinutes()).padStart(2, "0");
-      if (isToday) {
-        timeStr = `${_t("Hoy")}, ${hh}:${mm}`;
-      } else {
-        const day = latestDate.getDate();
-        const months = [
-          "Ene","Feb","Mar","Abr","May","Jun",
-          "Jul","Ago","Sep","Oct","Nov","Dic",
-        ];
-        timeStr = `${day} ${months[latestDate.getMonth()]}, ${hh}:${mm}`;
+      reportando++;
+      if (paro) {
+        estado = "paro";
+        const desde = hoy && /^PARO desde /.test(hoy.estado) ? hoy.estado.replace("PARO desde ", "") : p.ts;
+        texto = `${_t("En paro desde")} ${desde.slice(11, 16) || desde}`;
+        alarmas.push(["alta", `${p.nombre}: ${_t("en paro desde")} ${desde}`]);
       }
     }
-    lastUpdateEl.textContent = timeStr;
-  }
+    activos.push({ p, lat, hoy, estado, texto, f });
+  });
+  const orden = { paro: 0, off: 1, ok: 2 };
+  activos.sort((a, b) => orden[a.estado] - orden[b.estado] || a.p.nombre.localeCompare(b.p.nombre));
+
+  const barra = (h) => {
+    if (!h) return `<span class="hb-disp"><span class="disp-bar"></span><b>—</b></span>`;
+    const tot = h.operando + h.paro + h.sinCom || 1;
+    const pct = (v) => ((v / tot) * 100).toFixed(1);
+    return `<span class="hb-disp" title="${_t("Desde 05:00")}: ${h.operando.toFixed(1)} h ${_t("operando")}, ${h.paro.toFixed(1)} h ${_t("paro")}, ${h.sinCom.toFixed(1)} h ${_t("sin comunicación")}">
+      <span class="disp-bar"><i class="op" style="width:${pct(h.operando)}%"></i><i class="paro" style="width:${pct(h.paro)}%"></i><i class="sc" style="width:${pct(h.sinCom)}%"></i></span>
+      <b>${(tot > 0 ? (h.operando / tot) * 100 : 0).toFixed(0)} %</b>
+    </span>`;
+  };
+  const pozosHtml = `
+    <div class="hb-pozos">
+      <div class="hb-pz-head" aria-hidden="true">
+        <span>${_t("Pozo")}</span><span>${_t("Estado")}</span><span>${_t("Disponibilidad desde 05:00")}</span><span>${_t("Velocidad")}</span><span>${_t("Último dato")}</span>
+      </div>
+      ${activos
+        .map(
+          (a) => `<button type="button" class="hb-pz est-${a.estado}" data-ir="pozo-detail" data-nombre="${esc(a.p.nombre)}">
+            <span class="hb-pz-nombre">${esc(a.p.nombre)}</span>
+            <span class="hb-pz-estado"><i></i>${esc(a.texto)}</span>
+            ${barra(a.hoy)}
+            <span class="hb-pz-num">${a.lat.rpm == null ? "—" : a.lat.rpm.toFixed(1)}<small> rpm</small></span>
+            <span class="hb-pz-ts">${esc(haceCuanto(a.f))}</span>
+          </button>`,
+        )
+        .join("")}
+      ${
+        inactivos.length
+          ? `<p class="hb-inactivos">${_t("Sin reportar en más de 7 días")}: ${inactivos
+              .map((p) => `<button type="button" class="hb-link" data-ir="pozo-detail" data-nombre="${esc(p.nombre)}">${esc(p.nombre)}</button>`)
+              .join(", ")}</p>`
+          : ""
+      }
+    </div>`;
+
+  const icono =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+  box.innerHTML = `
+    <div class="hb-resumen">
+      <span class="hb-res-alm${alarmas.length ? " hay" : ""}">${
+        alarmas.length ? `${alarmas.length} ${alarmas.length === 1 ? _t("alarma activa") : _t("alarmas activas")}` : _t("Sin alarmas activas")
+      }</span>
+      <span>${reportando}/${total} ${_t("equipos reportando")}</span>
+      <span>${_t("Último dato")}: ${haceCuanto(ultimo)}</span>
+    </div>
+    ${alarmas.length ? `<div class="scada-alarms">${alarmas.map(([c, t]) => `<div class="alm alm-${c}" role="status">${icono}<span>${esc(t)}</span></div>`).join("")}</div>` : ""}
+    <div class="hb-grid">${erbHtml}${pozosHtml}</div>`;
+
+  $$("[data-ir]", box).forEach((b) =>
+    b.addEventListener("click", () => navigate(b.dataset.ir, { nombre: b.dataset.nombre })),
+  );
 }
 
 /* ──────────────────────────────────────────────
@@ -3438,6 +3523,7 @@ async function init() {
         await Promise.all([
           DB.loadERB().catch(() => {}),
           DB.loadPozos().catch(() => {}),
+          DB.loadPozosResumen(),
         ]);
         updateHomeStats();
       } else if (_cur === "erb") {
