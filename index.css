@@ -376,7 +376,7 @@ img{display:block}
 
 /* ─── MAIN WRAP ─── */
 .main-wrap{
-  flex:1;margin-left:var(--sb-w);
+  flex:1;min-width:0;margin-left:var(--sb-w);
   display:flex;flex-direction:column;min-height:100vh;
 }
 
@@ -2606,3 +2606,149 @@ body.light .ca-btn-cancel {
 .btn-reset-pass{margin-right:.25rem}
 .btn-reset-pass:hover{color:var(--orange)}
 @media(max-width:768px){.aj-pass-grid{grid-template-columns:1fr}}
+
+/* ══════════════════════════════════════════════
+   SCADA E41 — HMI de alto desempeño: gris para equipos, color solo para lo anormal
+══════════════════════════════════════════════ */
+.scada {
+  --num: "Barlow Semi Condensed", Inter, sans-serif;
+  --m-pipe: #4f6178;
+  --m-steel: #8798ad;
+  --m-body: #0f1826;
+  --m-liquid: #2c4a6b;
+  --m-surface: #8fb6de;
+  --m-hatch: rgba(135,152,173,.28);
+  --st-alta: #e66767;
+  --st-baja: #fab219;
+  display: flex; flex-direction: column; gap: 1rem;
+}
+body.light .scada {
+  --m-pipe: #9aa8ba;
+  --m-steel: #5b6b80;
+  --m-body: #f6f8fb;
+  --m-liquid: #b9cde3;
+  --m-surface: #3d6a99;
+  --m-hatch: rgba(91,107,128,.3);
+  --st-alta: #c62f2f;
+  --st-baja: #a86b00;
+}
+
+/* Barra de alarmas */
+.scada-alarms { display: flex; flex-direction: column; gap: .4rem; }
+.alm {
+  display: flex; align-items: flex-start; gap: .55rem;
+  padding: .55rem .8rem; border-radius: var(--r-sm);
+  font-size: .82rem; line-height: 1.35; border: 1px solid var(--border2);
+  background: var(--bg2);
+}
+.alm svg { flex: none; margin-top: 1px; }
+.alm span { color: var(--txt); }
+.alm-alta, .alm-critica { border-color: var(--st-alta); color: var(--st-alta); }
+.alm-baja { border-color: var(--st-baja); color: var(--st-baja); }
+.alm-falla { border-style: dashed; color: var(--txt2); }
+.alm-ok { color: var(--txt3); border-color: var(--border); }
+
+/* Inventario */
+.scada-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+.kpi { background: var(--bg2); padding: .9rem 1.1rem; display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.kpi-lbl { font-size: .75rem; color: var(--txt2); }
+.kpi-val { font-family: var(--num); font-size: 2rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.kpi-val small { font-family: Inter, sans-serif; font-size: .72rem; font-weight: 400; color: var(--txt2); margin-left: .3rem; }
+.kpi-pair { display: flex; gap: 1.4rem; }
+.kpi-sub { font-size: .72rem; color: var(--txt3); }
+
+/* Mímico */
+.scada-mimic { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: .5rem .75rem; }
+.mimic-svg { display: block; width: 100%; height: auto; max-height: 440px; font-family: var(--num); }
+.mimic-stale { opacity: .45; filter: grayscale(1); }
+.mimic-pipe { fill: none; stroke: var(--m-pipe); stroke-width: 5; stroke-linejoin: round; }
+.mimic-arrow { fill: var(--m-steel); }
+.mimic-note { fill: var(--txt2); font-size: 15px; font-weight: 500; }
+.mimic-roof, .mimic-body { fill: var(--m-body); stroke: var(--m-steel); stroke-width: 2; }
+.mimic-liquid { fill: var(--m-liquid); }
+.mimic-surface { stroke: var(--m-surface); stroke-width: 2; }
+.mimic-hatch-line { stroke: var(--m-hatch); stroke-width: 3; }
+.mimic-val { fill: var(--txt); font-size: 34px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.mimic-unit { font-size: 18px; fill: var(--txt2); }
+.mimic-val-falla { font-size: 15px; fill: var(--txt2); letter-spacing: .04em; }
+.mimic-limit { stroke: var(--m-steel); stroke-width: 2; }
+.mimic-limit-txt { fill: var(--txt3); font-size: 13px; font-weight: 600; }
+.mimic-tag { fill: var(--txt); font-size: 19px; font-weight: 600; }
+.est-alta .mimic-body, .est-alta .mimic-roof { stroke: var(--st-alta); stroke-width: 3; }
+.est-baja .mimic-body, .est-baja .mimic-roof { stroke: var(--st-baja); stroke-width: 3; }
+.est-falla .mimic-body, .est-falla .mimic-roof { stroke-dasharray: 6 5; }
+.mimic-inst circle { fill: var(--m-body); stroke: var(--m-steel); stroke-width: 2; }
+.mimic-inst-div, .mimic-tap { stroke: var(--m-steel); stroke-width: 1.5; }
+.mimic-inst-txt { fill: var(--txt); font-size: 13px; font-weight: 600; }
+.mimic-inst-val { fill: var(--txt); font-size: 14px; font-weight: 600; }
+.mimic-inst.sin-senal circle { stroke-dasharray: 4 4; }
+.mimic-inst.sin-senal .mimic-inst-val { fill: var(--txt3); font-weight: 500; }
+
+/* Placas por tanque */
+.scada-faces { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.face { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--r); padding: 1rem 1.1rem; display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.face header { display: flex; align-items: center; gap: .5rem; }
+.face h4 { font-family: var(--num); font-size: 1.15rem; font-weight: 600; flex: 1; }
+.face-sw { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+.face-chip { font-size: .7rem; padding: .15rem .5rem; border-radius: 99px; border: 1px solid var(--border2); color: var(--txt2); }
+.face.est-alta { border-color: var(--st-alta); }
+.face.est-alta .face-chip { border-color: var(--st-alta); color: var(--st-alta); }
+.face.est-baja { border-color: var(--st-baja); }
+.face.est-baja .face-chip { border-color: var(--st-baja); color: var(--st-baja); }
+.face.est-falla { border-style: dashed; }
+.face-main { font-family: var(--num); font-size: 2.4rem; font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; }
+.face-main small { font-family: Inter, sans-serif; font-size: .75rem; font-weight: 400; color: var(--txt2); margin-left: .3rem; }
+.face-sub { font-size: .8rem; color: var(--txt2); font-variant-numeric: tabular-nums; }
+.face-rate { font-size: .8rem; color: var(--txt2); }
+.face-rate b { font-family: var(--num); font-size: .95rem; font-weight: 600; color: var(--txt); }
+.face-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-top: .45rem; padding-top: .6rem; border-top: 1px solid var(--border); }
+.face-meta dt { font-size: .68rem; color: var(--txt3); }
+.face-meta dd { font-family: var(--num); font-size: .95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Tendencia */
+.scada-trend-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.scada-trend-head .box-title { margin-bottom: .4rem; }
+.scada-trend-sub { font-size: .72rem; color: var(--txt3); }
+/* contain: el ancho fijo del lienzo de uPlot no debe empujar el ancho de la página */
+.scada-trend { width: 100%; min-height: 220px; overflow: hidden; contain: inline-size; }
+.scada-trend-box { min-width: 0; }
+
+@media (max-width: 900px) {
+  .scada-faces { grid-template-columns: 1fr; }
+}
+@media (max-width: 660px) {
+  .scada-kpis { grid-template-columns: 1fr; }
+  .kpi-val { font-size: 1.6rem; }
+  /* En celular el mímico conserva un tamaño legible y se desliza de lado */
+  .scada-mimic { padding: .25rem; overflow-x: auto; }
+  .mimic-svg { min-width: 560px; }
+  .face-main { font-size: 2rem; }
+}
+
+/* uPlot 1.6.32 (MIT): estilos base adaptados al tema */
+.uplot, .uplot *, .uplot *::before, .uplot *::after { box-sizing: border-box; }
+.uplot { font-family: "Barlow Semi Condensed", Inter, sans-serif; line-height: 1.5; width: min-content; }
+.u-wrap { position: relative; user-select: none; }
+.u-over, .u-under { position: absolute; }
+.u-under { overflow: hidden; }
+.uplot canvas { display: block; position: relative; width: 100%; height: 100%; }
+.u-axis { position: absolute; }
+.u-legend { font-size: 13px; margin: .4rem auto 0; text-align: left; color: var(--txt2); }
+.u-inline { display: block; }
+.u-inline * { display: inline-block; }
+.u-inline tr { margin-right: 14px; }
+.u-legend th { font-weight: 500; }
+.u-legend th > * { vertical-align: middle; display: inline-block; }
+.u-legend .u-marker { width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; background-clip: padding-box !important; }
+.u-legend .u-value { color: var(--txt); font-weight: 600; font-variant-numeric: tabular-nums; }
+.u-inline.u-live th::after { content: ":"; vertical-align: middle; }
+.u-inline:not(.u-live) .u-value { display: none; }
+.u-series > * { padding: 3px; }
+.u-series th { cursor: pointer; }
+.u-legend .u-off > * { opacity: .3; }
+.u-select { background: rgba(127,127,127,.1); position: absolute; pointer-events: none; }
+.u-cursor-x, .u-cursor-y { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; }
+.u-hz .u-cursor-x, .u-vt .u-cursor-y { height: 100%; border-right: 1px dashed var(--txt3); }
+.u-hz .u-cursor-y, .u-vt .u-cursor-x { width: 100%; border-bottom: 1px dashed var(--txt3); }
+.u-cursor-pt { position: absolute; top: 0; left: 0; border-radius: 50%; border: 0 solid; pointer-events: none; will-change: transform; background-clip: padding-box !important; }
+.u-axis.u-off, .u-select.u-off, .u-cursor-x.u-off, .u-cursor-y.u-off, .u-cursor-pt.u-off { display: none; }

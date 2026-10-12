@@ -486,6 +486,11 @@ const DB = (function () {
     return !d || Date.now() - d.getTime() > STALE_MS;
   }
 
+  /* Últimas n lecturas crudas, sin recorrer toda la historia */
+  function getERBUltimas(n) {
+    return cache.erb.rows.slice(-n);
+  }
+
   function getLatestERB() {
     var r = cache.erb.rows;
     return r.length ? r[r.length - 1] : null;
@@ -626,6 +631,8 @@ const DB = (function () {
           color: "#4d9ffc",
         },
       ],
+      umbH: l.umbH,
+      umbL: l.umbL,
       presL1: l.presL1,
       presL2: l.presL2,
     };
@@ -759,6 +766,7 @@ const DB = (function () {
     getERBDiaEnCurso,
     getERBCierres,
     getLatestERB,
+    getERBUltimas,
     getPozos,
     getPozoLatest,
     getPozoHistory,

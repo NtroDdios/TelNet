@@ -958,17 +958,6 @@ function sampleSeries(rows, key, maxPts = 120) {
 const ERB_BBL_POR_M = [1092.953, 1066.058202, 840.1914];
 const ERB_NIV_KEYS = ["niv601", "niv602", "niv741"];
 
-function erbSerieBbl(rows, i) {
-  const key = ERB_NIV_KEYS[i];
-  return sampleSeries(
-    rows.map((r) => ({
-      ts: r.ts,
-      v: r[key] == null ? null : r[key] * ERB_BBL_POR_M[i],
-    })),
-    "v",
-  );
-}
-
 function avg(rows, key) {
   const vals = rows
     .map((r) => parseFloat(r[key]))
@@ -1520,164 +1509,308 @@ function renderERBDetail(range, customFrom, customTo) {
     second: "2-digit",
   });
 
-  const hours = rangeHours(range);
   const history = erbHistorial(range, customFrom, customTo);
+  const fresco = !DB.isStale(d.ts);
+  const ultimas = DB.getERBUltimas(90);
+  const tanks = d.tanks.map((t, i) => erbTanque(t, i, d, ultimas));
 
-  // Metrics – tanks
-  const tanks = d.tanks;
-  let totalCap = 0;
-  let totalVol = 0;
+  renderERBAlarmas(tanks, fresco, d.ts);
+  renderERBKpis(tanks, DB.getERBDiaEnCurso());
+  el("ed-mimic").innerHTML = erbMimico(tanks, d, fresco);
+  el("ed-faces").innerHTML = tanks.map(erbPlaca).join("");
+  renderERBTendencia(history);
+  renderERBCierre();
+}
 
-  tanks.forEach((t, i) => {
-    t.capMax = t.altMax * ERB_BBL_POR_M[i] || 0;
-    t.volActual = t.nivel * ERB_BBL_POR_M[i] || 0;
-    t.pct = Math.max(0, Math.min(100, t.pct));
-    totalCap += t.capMax;
-    totalVol += t.volActual;
+/* ── SCADA E41 ──
+   Estilo HMI de alto desempeño: equipos en gris, color solo para lo anormal.
+   Plumas validadas (contraste y daltonismo) sobre el fondo oscuro de la app. */
+const ERB_PLUMAS = ["#3987e5", "#d95926", "#199e70"];
+const ERB_NIVEL_MAX_M = 15; // lecturas fuera de (0, 15] m son falla del radar
+
+const fmtBbl = (n) =>
+  n == null ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+const fmtSigno = (n) => (n == null ? "—" : (n > 0 ? "+" : n < 0 ? "−" : "") + fmtBbl(Math.abs(n)));
+const fmtHoras = (h) =>
+  h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : `${h.toFixed(h < 10 ? 1 : 0)} h`;
+
+/* Tasa de cambio del tanque en bbl/h con la última hora de lecturas */
+function erbTasa(rows, i) {
+  const key = ERB_NIV_KEYS[i];
+  const pts = rows
+    .map((r) => ({ t: DB.parseDate(r.ts), v: r[key] }))
+    .filter((p) => p.t && p.v > 0 && p.v <= ERB_NIVEL_MAX_M);
+  if (pts.length < 10) return null;
+  const fin = pts[pts.length - 1];
+  const ini = pts.find((p) => fin.t - p.t <= 65 * 60e3);
+  const horas = (fin.t - ini.t) / 3600e3;
+  if (horas < 0.5) return null;
+  return ((fin.v - ini.v) * ERB_BBL_POR_M[i]) / horas;
+}
+
+function erbTanque(t, i, d, ultimas) {
+  const f = ERB_BBL_POR_M[i];
+  const falla = !(t.nivel > 0 && t.nivel <= ERB_NIVEL_MAX_M);
+  const umbH = d.umbH;
+  const umbL = d.umbL;
+  const cap = t.altMax * f;
+  const bbl = falla ? null : t.nivel * f;
+  const pct = falla ? null : (t.nivel / t.altMax) * 100;
+  const tasa = falla ? null : erbTasa(ultimas, i);
+  let estado = "normal";
+  if (falla) estado = "falla";
+  else if (t.alarmH || pct >= umbH) estado = "alta";
+  else if (t.alarmL || pct <= umbL) estado = "baja";
+  // Cuánto falta para llegar a un nivel de alarma al ritmo actual
+  let eta = null;
+  if (tasa != null && Math.abs(tasa) >= 20) {
+    if (tasa > 0 && pct < umbH) eta = { a: "alto", h: ((umbH / 100) * cap - bbl) / tasa };
+    if (tasa < 0 && pct > umbL) eta = { a: "bajo", h: (bbl - (umbL / 100) * cap) / -tasa };
+    if (eta && eta.h > 48) eta = null; // a más de dos días no orienta la operación
+  }
+  return { ...t, i, color: ERB_PLUMAS[i], cap, bbl, pct, tasa, estado, eta, umbH, umbL, falla };
+}
+
+function renderERBAlarmas(tanks, fresco, ts) {
+  const items = [];
+  if (!fresco)
+    items.push(["critica", `${_t("Sin datos de la estación desde")} ${ts || "—"}`]);
+  tanks.forEach((t) => {
+    if (t.estado === "alta")
+      items.push(["alta", `${t.nombre}: ${_t("nivel alto")} — ${t.pct.toFixed(0)} % (AH ${t.umbH} %)`]);
+    if (t.estado === "baja")
+      items.push(["baja", `${t.nombre}: ${_t("nivel bajo")} — ${t.pct.toFixed(0)} % (AL ${t.umbL} %)`]);
+    if (t.estado === "falla")
+      items.push([
+        "falla",
+        `${t.nombre}: ${_t("sin lectura de nivel")} (${_t("el equipo reporta")} ${t.nivel} m). ${_t("Revisar sensor.")}`,
+      ]);
   });
-  const avgPct =
-    tanks.length > 0
-      ? tanks.reduce((sum, t) => sum + t.pct, 0) / tanks.length
-      : 0;
-  const fmt = (n) => n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const icono =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+  el("ed-alarms").innerHTML = items.length
+    ? items.map(([c, txt]) => `<div class="alm alm-${c}" role="status">${icono}<span>${esc(txt)}</span></div>`).join("")
+    : `<div class="alm alm-ok" role="status">${_t("Sin alarmas activas")}</div>`;
+}
 
-  // 1) Resumen – fila horizontal compacta (imagen 2)
-  el("ed-resumen").innerHTML = `
-    <div class="res-card">
-      <svg class="res-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="7" rx="9" ry="4"/><path d="M3 7v5c0 2.2 4 4 9 4s9-1.8 9-4V7"/><path d="M3 12v5c0 2.2 4 4 9 4s9-1.8 9-4v-5"/></svg>
-      <span class="res-val">${tanks.length}</span>
-      <span class="res-lbl">${_t("Tanques totales")}</span>
+function renderERBKpis(tanks, dia) {
+  const vivos = tanks.filter((t) => !t.falla);
+  const inv = vivos.reduce((a, t) => a + t.bbl, 0);
+  const cap = vivos.reduce((a, t) => a + t.cap, 0);
+  const conTasa = vivos.filter((t) => t.tasa != null);
+  const neto = conTasa.length ? conTasa.reduce((a, t) => a + t.tasa, 0) : null;
+  const tendencia =
+    neto == null ? _t("Sin lecturas suficientes") : Math.abs(neto) < 20 ? _t("Estable") : neto > 0 ? _t("Llenando") : _t("Vaciando");
+  el("ed-kpis").innerHTML = `
+    <div class="kpi">
+      <span class="kpi-lbl">${_t("Inventario en tanques")}</span>
+      <span class="kpi-val">${fmtBbl(inv)}<small>bbl</small></span>
+      <span class="kpi-sub">${cap ? ((inv / cap) * 100).toFixed(0) : "—"} % ${_t("de")} ${fmtBbl(cap)} bbl ${_t("con lectura")}</span>
     </div>
-    <div class="res-card">
-      <svg class="res-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>
-      <span class="res-val">${fmt(totalCap)} <span style="font-size:0.72rem;font-weight:400;color:var(--txt2)">bbl</span></span>
-      <span class="res-lbl">${_t("Capacidad total")}</span>
+    <div class="kpi">
+      <span class="kpi-lbl">${_t("Balance neto, última hora")}</span>
+      <span class="kpi-val">${fmtSigno(neto)}<small>bbl/h</small></span>
+      <span class="kpi-sub">${tendencia}</span>
     </div>
-    <div class="res-card">
-      <div class="circle-chart" style="width:48px;height:48px;margin-bottom:.15rem">
-        <svg viewBox="0 0 24 24"><circle class="circle-bg" cx="12" cy="12" r="10" stroke-width="2.5"/><circle class="circle-fg" cx="12" cy="12" r="10" stroke-dasharray="${avgPct * 0.628} 62.8" stroke-width="2.5" style="stroke:#2ecc71"/></svg>
-        <span class="circle-val" style="font-size:.85rem">${avgPct.toFixed(0)}%</span>
-      </div>
-      <span class="res-lbl">${_t("Promedio de llenado")}</span>
-    </div>
-    <div class="res-card">
-      <svg class="res-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-      <span class="res-val">${fmt(totalVol)} <span style="font-size:0.72rem;font-weight:400;color:var(--txt2)">bbl</span></span>
-      <span class="res-lbl">${_t("Volumen total actual")}</span>
-    </div>
-  `;
+    <div class="kpi">
+      <span class="kpi-lbl">${_t("Día operativo desde las 05:00")}</span>
+      <span class="kpi-val kpi-pair">
+        <span>${fmtBbl(dia && dia.recibido)}<small>${_t("recibido")}</small></span>
+        <span>${fmtBbl(dia && dia.enviado)}<small>${_t("enviado")}</small></span>
+      </span>
+      <span class="kpi-sub">bbl, ${_t("por balance de nivel")}</span>
+    </div>`;
+}
 
-  // 2) Vista general – industrial tanks
-  el("ed-visuals").innerHTML = tanks
-    .map((t, i) => {
-      const P = Math.max(0, Math.min(100, t.pct));
-      const liquidClass =
-        t.alarmH || t.alarmL || P >= (SETTINGS.tanques.nivelCritico || 80)
-          ? "danger"
-          : P >= (SETTINGS.tanques.nivelAdvertencia || 70)
-            ? "warn"
-            : "";
-      return `
-    <article class="tank-item">
-      <div class="tank-title">${t.nombre}</div>
-      <div class="industrial-tank" style="--level:${P}">
-        <div class="rail"><i></i><i></i><i></i><i></i><i></i></div>
-        <div class="tank-top"></div>
-        <div class="ladder"></div>
-        <div class="stairs"></div>
-        <div class="pipe"></div>
-        <div class="tank-body">
-          <div class="liquid ${liquidClass}" data-percent="${fmt(t.volActual)} bbl"></div>
-        </div>
-        <div class="tank-base"></div>
-      </div>
-      <div class="tank-info">
-        ${_t("Capacidad")}: ${fmt(t.capMax)} bbl<br>
-        ${_t("Nivel actual")}: ${fmt(t.volActual)} bbl
-      </div>
-    </article>`;
-    })
-    .join("");
+/* Mímico: tanques a escala (alto = altura configurada, ancho ∝ √(bbl/m), es decir al diámetro) */
+function erbMimico(tanks, d, fresco) {
+  const W = 900;
+  const base = 296;
+  const mPx = 21;
+  const cx = [185, 410, 630];
+  const yRecibo = 40;
+  const yBombeo = 344;
+  let s = `<svg viewBox="0 0 ${W} 380" class="mimic-svg${fresco ? "" : " mimic-stale"}" role="img" aria-label="${_t("Esquema de la ERB E41 con el nivel de cada tanque")}">
+    <defs>
+      <pattern id="mimic-hatch" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <line x1="0" y1="0" x2="0" y2="9" class="mimic-hatch-line"/>
+      </pattern>
+    </defs>
+    <path class="mimic-pipe" d="M24 ${yRecibo} H ${cx[2]}"/>
+    <path class="mimic-arrow" d="M58 ${yRecibo - 6} l11 6 l-11 6 z"/>
+    <text class="mimic-note" x="24" y="${yRecibo - 14}">${_t("Recibo de estaciones")}</text>`;
 
-  // 3) Detalle por tanque
-  el("ed-details").innerHTML = tanks
-    .map(
-      (t, i) => `
-    <div class="tank-det-card" onclick="window.openTankChartModal(${i})">
-      <div class="tdc-head">
-        <div><h4>${t.nombre}</h4><span>${_t("Tanque de Almacenamiento")} ${t.nombre}</span></div>
-        <span class="status-pill ${t.alarmH || t.alarmL ? "orange" : "green"}">● ${t.alarmH || t.alarmL ? _t("Alarma") : _t("En línea")}</span>
-      </div>
-      <div class="tdc-metrics">
-        <div style="display:flex;gap:1.5rem">
-          <div class="tdc-col"><span class="tdc-lbl">${_t("Capacidad")}</span><span class="tdc-val">${fmt(t.capMax)} <span style="font-size:0.75rem;font-weight:400;color:var(--txt2)">bbl</span></span></div>
-          <div class="tdc-col"><span class="tdc-lbl">${_t("Nivel actual")}</span><span class="tdc-val">${fmt(t.volActual)} <span style="font-size:0.75rem;font-weight:400;color:var(--txt2)">bbl</span></span></div>
-        </div>
-        <div class="circle-chart">
-          <svg><circle class="circle-bg" cx="37" cy="37" r="32"/><circle class="circle-fg" cx="37" cy="37" r="32" stroke-dasharray="${t.pct * 2.01} 201"/></svg>
-          <span class="circle-val">${fmt(t.volActual)}</span>
-          <span class="circle-lbl">bbl</span>
-        </div>
-      </div>
-      <div class="tdc-chart-wrap">
-        <div class="tdc-chart-lbl">${_t("Comportamiento del nivel (últimas {hours} horas)").replace("{hours}", hours)}</div>
-        <canvas id="tchart-${i}" class="tdc-chart"></canvas>
-      </div>
-    </div>
-  `,
-    )
-    .join("");
+  let xMin = W;
+  tanks.forEach((t, k) => {
+    const w = Math.sqrt(ERB_BBL_POR_M[t.i]) * 5.2;
+    const h = t.altMax * mPx;
+    const x = cx[k] - w / 2;
+    const y = base - h;
+    const xs = x + w + 16;
+    xMin = Math.min(xMin, xs);
+    s += `<path class="mimic-pipe" d="M${cx[k]} ${yRecibo} V ${y - 12}"/>
+      <path class="mimic-pipe" d="M${x + w} ${base - 12} H ${xs} V ${yBombeo}"/>
+      <g class="mimic-tank est-${t.estado}">
+        <path class="mimic-roof" d="M${x} ${y} L${cx[k]} ${y - 12} L${x + w} ${y} Z"/>
+        <rect class="mimic-body" x="${x}" y="${y}" width="${w}" height="${h}"/>`;
+    if (t.falla) {
+      s += `<rect x="${x + 1}" y="${y + 1}" width="${w - 2}" height="${h - 2}" fill="url(#mimic-hatch)"/>
+        <text class="mimic-val mimic-val-falla" x="${cx[k]}" y="${y + h / 2 + 6}" text-anchor="middle">${_t("SIN LECTURA")}</text>`;
+    } else {
+      const lh = h * Math.min(1, t.pct / 100);
+      s += `<rect class="mimic-liquid" x="${x + 1.5}" y="${base - lh}" width="${w - 3}" height="${lh}"/>
+        <line class="mimic-surface" x1="${x + 1.5}" x2="${x + w - 1.5}" y1="${base - lh}" y2="${base - lh}"/>
+        <text class="mimic-val" x="${cx[k]}" y="${Math.min(base - 12, Math.max(y + 34, base - lh / 2 + 10))}" text-anchor="middle">${t.pct.toFixed(0)}<tspan class="mimic-unit"> %</tspan></text>`;
+    }
+    [["AH", t.umbH], ["AL", t.umbL]].forEach(([lbl, p]) => {
+      const yy = base - (h * p) / 100;
+      s += `<line class="mimic-limit" x1="${x - 9}" x2="${x}" y1="${yy}" y2="${yy}"/>
+        <text class="mimic-limit-txt" x="${x - 13}" y="${yy + 4}" text-anchor="end">${lbl}</text>`;
+    });
+    s += `<circle cx="${cx[k] - 34}" cy="${base + 22}" r="5" fill="${t.color}"/>
+        <text class="mimic-tag" x="${cx[k] - 24}" y="${base + 28}">${esc(t.nombre)}</text>
+      </g>`;
+  });
 
-  // Draw Charts for each tank
-  tanks.forEach((t, i) => {
-    const { labels, vals } = erbSerieBbl(history, i);
-    setTimeout(() => {
-      CHR.create(`tchart-${i}`, {
-        type: "line",
-        data: {
-          labels,
-          datasets: [
-            {
-              label: "Nivel bbl",
-              data: vals,
-              borderColor: "#1d7af5",
-              backgroundColor: "rgba(29,122,245,0.1)",
-              borderWidth: 2,
-              fill: true,
-              tension: 0.3,
-              pointRadius: 0,
-            },
-          ],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
-          scales: {
-            x: {
-              display: true,
-              ticks: { maxTicksLimit: 6, color: "#7b8ea8", font: { size: 10 } },
-              grid: { display: false },
-            },
-            y: {
-              display: true,
-              min: 0,
-              max: Math.ceil(t.capMax) || undefined,
-              ticks: {
-                maxTicksLimit: 5,
-                color: "#7b8ea8",
-                font: { size: 10 },
-                callback: (v) => fmt(v),
-              },
-              grid: { color: "rgba(255,255,255,0.05)" },
-            },
+  s += `<path class="mimic-pipe" d="M${xMin} ${yBombeo} H ${W - 24}"/>
+    <path class="mimic-arrow" d="M${W - 36} ${yBombeo - 6} l11 6 l-11 6 z"/>
+    <text class="mimic-note" x="${W - 24}" y="${yBombeo + 26}" text-anchor="end">${_t("Bombeo a Cab. Cacalilao")}</text>`;
+
+  // Indicadores de presión (símbolo ISA): 0 kg/cm² se toma como sin señal
+  [["L1", d.presL1, 786], ["L2", d.presL2, 856]].forEach(([tag, v, x]) => {
+    const ok = v > 0;
+    s += `<g class="mimic-inst${ok ? "" : " sin-senal"}">
+        <line class="mimic-tap" x1="${x}" x2="${x}" y1="${yBombeo}" y2="${yBombeo - 34}"/>
+        <circle cx="${x}" cy="${yBombeo - 56}" r="22"/>
+        <line class="mimic-inst-div" x1="${x - 22}" x2="${x + 22}" y1="${yBombeo - 56}" y2="${yBombeo - 56}"/>
+        <text class="mimic-inst-txt" x="${x}" y="${yBombeo - 61}" text-anchor="middle">PI</text>
+        <text class="mimic-inst-txt" x="${x}" y="${yBombeo - 41}" text-anchor="middle">${tag}</text>
+        <text class="mimic-inst-val" x="${x}" y="${yBombeo - 88}" text-anchor="middle">${ok ? v.toFixed(1) + " kg/cm²" : _t("sin señal")}</text>
+      </g>`;
+  });
+  return s + "</svg>";
+}
+
+function erbPlaca(t) {
+  const chip = {
+    normal: _t("Normal"),
+    alta: _t("Nivel alto"),
+    baja: _t("Nivel bajo"),
+    falla: _t("Sin lectura"),
+  }[t.estado];
+  let tasa;
+  if (t.falla) tasa = `<span class="face-rate">${_t("El sensor reporta")} ${t.nivel} m</span>`;
+  else if (t.tasa == null) tasa = `<span class="face-rate">${_t("Tasa sin lecturas suficientes")}</span>`;
+  else if (Math.abs(t.tasa) < 20)
+    tasa = `<span class="face-rate">${_t("Estable")} <b>${fmtSigno(t.tasa)} bbl/h</b></span>`;
+  else
+    tasa = `<span class="face-rate ${t.tasa > 0 ? "sube" : "baja"}">${t.tasa > 0 ? "▲" : "▼"} <b>${fmtSigno(t.tasa)} bbl/h</b>${
+      t.eta ? ` · ${_t(t.eta.a === "alto" ? "nivel alto en" : "nivel bajo en")} ~${fmtHoras(t.eta.h)}` : ""
+    }</span>`;
+  return `<article class="face est-${t.estado}">
+    <header>
+      <span class="face-sw" style="background:${t.color}"></span>
+      <h4>${esc(t.nombre)}</h4>
+      <span class="face-chip">${chip}</span>
+    </header>
+    <div class="face-main">${t.falla ? "—" : fmtBbl(t.bbl)}<small>bbl</small></div>
+    <div class="face-sub">${t.falla ? `${_t("Capacidad")} ${fmtBbl(t.cap)} bbl` : `${t.nivel.toFixed(2)} m · ${t.pct.toFixed(0)} % ${_t("de")} ${t.altMax} m`}</div>
+    ${tasa}
+    <dl class="face-meta">
+      <div><dt>${_t("Capacidad")}</dt><dd>${fmtBbl(t.cap)}</dd></div>
+      <div><dt>AH ${t.umbH} %</dt><dd>${fmtBbl((t.cap * t.umbH) / 100)}</dd></div>
+      <div><dt>AL ${t.umbL} %</dt><dd>${fmtBbl((t.cap * t.umbL) / 100)}</dd></div>
+    </dl>
+  </article>`;
+}
+
+/* Tendencia multipluma con uPlot (cursor y leyenda con valores al pasar el mouse) */
+let _erbPlot = null;
+let _erbPlotRO = null;
+function renderERBTendencia(history) {
+  const box = el("ed-trend");
+  if (_erbPlotRO) _erbPlotRO.disconnect();
+  if (_erbPlot) _erbPlot.destroy();
+  _erbPlot = _erbPlotRO = null;
+  box.innerHTML = "";
+  const horaria = history.length && history[0].muestras != null;
+  el("ed-trend-sub").textContent = horaria
+    ? _t("Lectura al final de cada hora")
+    : _t("Lectura por minuto");
+  if (typeof uPlot === "undefined") {
+    box.innerHTML = `<p class="cierre-nota">${_t("No se pudo cargar la librería de gráficas. Revise la conexión y recargue.")}</p>`;
+    return;
+  }
+  const xs = [];
+  const ys = ERB_NIV_KEYS.map(() => []);
+  history.forEach((r) => {
+    const t = DB.parseDate(r.ts);
+    if (!t) return;
+    xs.push(t.getTime() / 1000);
+    ERB_NIV_KEYS.forEach((k, i) => {
+      const v = r[k];
+      ys[i].push(v > 0 && v <= ERB_NIVEL_MAX_M ? Math.round(v * ERB_BBL_POR_M[i]) : null);
+    });
+  });
+  if (!xs.length) {
+    box.innerHTML = `<p class="cierre-nota">${_t("Sin lecturas en este rango.")}</p>`;
+    return;
+  }
+  const css = getComputedStyle(document.body);
+  const tinta = css.getPropertyValue("--txt2").trim();
+  const reja = css.getPropertyValue("--border2").trim();
+  const fuente = '11px "Barlow Semi Condensed", Inter, sans-serif';
+  const alto = window.innerWidth < 660 ? 220 : 300;
+  const eje = { stroke: tinta, font: fuente, grid: { stroke: reja, width: 1 }, ticks: { show: false } };
+  _erbPlot = new uPlot(
+    {
+      width: box.clientWidth,
+      height: alto,
+      cursor: { y: false, points: { size: 8 } },
+      scales: { y: { range: (u, min, max) => [0, Math.max(1000, Math.ceil((max * 1.08) / 500) * 500)] } },
+      axes: [
+        {
+          ...eje,
+          // 24 h en español: hora dentro del día, fecha en la medianoche o en rangos largos
+          values: (u, vals) => {
+            const largo = u.scales.x.max - u.scales.x.min > 2 * 86400;
+            return vals.map((v) => {
+              const f = new Date(v * 1000);
+              const dia = `${String(f.getDate()).padStart(2, "0")}/${String(f.getMonth() + 1).padStart(2, "0")}`;
+              if (largo || (f.getHours() === 0 && f.getMinutes() === 0)) return dia;
+              return `${String(f.getHours()).padStart(2, "0")}:${String(f.getMinutes()).padStart(2, "0")}`;
+            });
           },
         },
-      });
-    }, 50 * i);
+        { ...eje, size: 52, values: (u, vals) => vals.map((v) => fmtBbl(v)) },
+      ],
+      series: [
+        {
+          label: _t("Hora"),
+          // Sin cursor encima, la leyenda muestra la última lectura
+          value: (u, v, si, idx) => {
+            const x = idx == null ? xs[xs.length - 1] : v;
+            return x == null ? "—" : new Date(x * 1000).toLocaleString("es-MX", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+          },
+        },
+        ...["TV-601", "TV-602", "TV-741"].map((n, i) => ({
+          label: n,
+          stroke: ERB_PLUMAS[i],
+          width: 2,
+          value: (u, v, si, idx) => {
+            const y = idx == null ? ys[i][ys[i].length - 1] : v;
+            return y == null ? "—" : fmtBbl(y);
+          },
+        })),
+      ],
+    },
+    [xs, ...ys],
+    box,
+  );
+  _erbPlotRO = new ResizeObserver(() => {
+    if (_erbPlot && box.clientWidth) _erbPlot.setSize({ width: box.clientWidth, height: alto });
   });
-
-  renderERBCierre();
+  _erbPlotRO.observe(box);
 }
 
 /* Cierre del día operativo (05:00 → 05:00), como en el parte diario */
@@ -2963,88 +3096,6 @@ function renderPagination(containerId, total, current) {
     <button class="pg-btn" ${total <= 1 ? "disabled" : ""}>${pageSvgRR}</button>
   `;
 }
-
-/* ──────────────────────────────────────────────
-   TANK DETAILS MODAL
-────────────────────────────────────────────── */
-function openTankChartModal(index) {
-  const d = DB.getERBDetalle();
-  if (!d) return;
-  const t = d.tanks[index];
-  if (!t) return;
-
-  const modal = el("chart-modal");
-  el("modal-title").textContent = `Histórico de Nivel - Tanque ${t.nombre}`;
-  modal.classList.remove("hidden");
-
-  const history = erbHistorial(_erbRange, _erbCustomFrom, _erbCustomTo);
-  const { labels, vals } = erbSerieBbl(history, index);
-  const capMax = Math.ceil(t.altMax * ERB_BBL_POR_M[index]) || undefined;
-
-  CHR.create("modal-chart", {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          label: `Nivel bbl (${t.nombre})`,
-          data: vals,
-          borderColor: "#1d7af5",
-          backgroundColor: "rgba(29,122,245,0.15)",
-          borderWidth: 3,
-          fill: true,
-          tension: 0.3,
-          pointRadius: 2,
-          pointHoverRadius: 6,
-        },
-      ],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: true, labels: { color: "#7b8ea8" } },
-      },
-      scales: {
-        x: {
-          display: true,
-          ticks: { color: "#7b8ea8", font: { size: 11 } },
-          grid: { color: "rgba(255,255,255,0.03)" },
-        },
-        y: {
-          display: true,
-          min: 0,
-          max: capMax,
-          ticks: {
-            color: "#7b8ea8",
-            font: { size: 11 },
-            callback: (v) =>
-              v.toLocaleString("en-US", { maximumFractionDigits: 0 }),
-          },
-          grid: { color: "rgba(255,255,255,0.06)" },
-        },
-      },
-    },
-  });
-
-  const close = () => {
-    modal.classList.add("hidden");
-    CHR.destroy("modal-chart");
-  };
-  el("modal-close-btn").onclick = close;
-  modal.onclick = (e) => {
-    if (e.target === modal) close();
-  };
-
-  const escHandler = (e) => {
-    if (e.key === "Escape") {
-      close();
-      document.removeEventListener("keydown", escHandler);
-    }
-  };
-  document.addEventListener("keydown", escHandler);
-}
-window.openTankChartModal = openTankChartModal;
 
 /* ──────────────────────────────────────────────
    SESSION

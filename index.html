@@ -54,7 +54,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Inter:wght@300;400;500;600;700&display=swap"
       rel="stylesheet"
     />
 
@@ -1826,35 +1826,19 @@
 
             <!-- NEW ERB LAYOUT -->
             <div class="erb-dashboard">
-              <!-- TOP ROW: SIDE BY SIDE -->
-              <div class="erb-top-row">
-                <!-- RESUMEN -->
-                <div class="erb-box erb-resumen-box">
-                  <h3 class="box-title" data-i18n="Resumen de tanques">
-                    Resumen de tanques
-                  </h3>
-                  <div class="resumen-grid" id="ed-resumen">
-                    <!-- Injected via JS -->
+              <!-- SCADA: alarmas, inventario, mímico, placas y tendencia -->
+              <div class="scada">
+                <div class="scada-alarms" id="ed-alarms"></div>
+                <div class="scada-kpis" id="ed-kpis"></div>
+                <div class="scada-mimic" id="ed-mimic"></div>
+                <div class="scada-faces" id="ed-faces"></div>
+                <div class="erb-box scada-trend-box">
+                  <div class="scada-trend-head">
+                    <h3 class="box-title">Inventario por tanque (bbl)</h3>
+                    <span class="scada-trend-sub" id="ed-trend-sub"></span>
                   </div>
+                  <div class="scada-trend" id="ed-trend"></div>
                 </div>
-
-                <!-- TANK VISUALS -->
-                <div class="erb-box erb-visuals-box">
-                  <h3 class="box-title" data-i18n="Vista general de tanques">
-                    Vista general de tanques
-                  </h3>
-                  <div class="tank-visuals" id="ed-visuals">
-                    <!-- Injected via JS -->
-                  </div>
-                </div>
-              </div>
-
-              <!-- DETAILS ROW -->
-              <h3 class="box-title" style="margin-top: 1.5rem">
-                Detalle por tanque
-              </h3>
-              <div class="erb-details-grid" id="ed-details">
-                <!-- Injected via JS -->
               </div>
 
               <!-- CIERRE DEL DÍA OPERATIVO -->
@@ -2374,6 +2358,7 @@
 
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js" integrity="sha384-e6nUZLBkQ86NJ6TVVKAeSaK8jWa3NhkYWZFomE39AvDbQWeie9PlQqM3pmYW5d1g" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js" integrity="sha384-Gx3t0zdBAuQOuvvmaLZj7HKEiSgWTAs+VdtNY7wt19QDPTDQjFIwAuXDj0zeN00c" crossorigin="anonymous"></script>
     <!-- Leaflet -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
     <!-- jsPDF -->
