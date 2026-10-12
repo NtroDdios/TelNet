@@ -15,6 +15,12 @@ const DB = (function () {
   var RESUMEN_HORA_CSV = E41_PUB + "&gid=541439107";
   var CIERRE_CSV = E41_PUB + "&gid=375527899";
   var RESUMEN_TTL = 10 * 60 * 1000; // el resumen se recalcula cada hora
+  /* Pestañas que llena google_apps_script_pozos_resumen.js en la hoja de pozos */
+  var POZOS_PUB =
+    "https://docs.google.com/spreadsheets/d/e/2PACX-1vT_8dadg9C3qMvGt9nHj29zA4gpewQt_5J1DToV9jtunqdS-qDY9WaBZ89YBhhGvZIx9AQSAdQBDov1/pub?output=csv";
+  var POZOS_DIA_CSV = POZOS_PUB + "&gid=1460786785";
+  var POZOS_EVENTOS_CSV = POZOS_PUB + "&gid=2130024985";
+  var POZOS_HOY_CSV = POZOS_PUB + "&gid=1448633695";
 
   var MAX_ROWS = 250000;
   var TTL = 30000; // 30 seconds — keeps live data fresh
@@ -25,6 +31,7 @@ const DB = (function () {
     pozos: { rows: [], ts: 0 },
     coordenadas: { rows: [], ts: 0 },
     resumen: { hora: [], cierre: [], ts: 0 },
+    pozosResumen: { dias: [], eventos: [], hoy: [], ts: 0 },
   };
 
   /* ── Static geodata ── */
@@ -406,6 +413,70 @@ const DB = (function () {
     return cache.resumen;
   }
 
+  /* ── Resumen de pozos (RESUMEN_POZOS, EVENTOS_POZOS y POZOS_HOY) ── */
+  function parsePozoDia(o) {
+    return {
+      fecha: o.fecha_cierre,
+      pozo: o.pozo,
+      operando: toF(o.horas_operando),
+      paro: toF(o.horas_paro),
+      sinCom: toF(o.horas_sin_com),
+      disponibilidad: toF(o.disponibilidad_pct),
+      paros: toI(o.paros),
+      rpm: toN(o.rpm_prom),
+      corriente: toN(o.corriente_prom),
+      estado: o.ultimo_estado,
+      ultima: o.ultima_lectura,
+    };
+  }
+
+  async function loadPozosResumen() {
+    var now = Date.now();
+    if (cache.pozosResumen.ts && now - cache.pozosResumen.ts < RESUMEN_TTL)
+      return cache.pozosResumen;
+    try {
+      var tablas = await Promise.all([
+        fetchTabla(POZOS_DIA_CSV),
+        fetchTabla(POZOS_EVENTOS_CSV),
+        fetchTabla(POZOS_HOY_CSV),
+      ]);
+      cache.pozosResumen = {
+        dias: tablas[0].map(parsePozoDia),
+        eventos: tablas[1].map(function (o) {
+          return {
+            dia: o.dia_operativo,
+            pozo: o.pozo,
+            tipo: o.tipo,
+            inicio: o.inicio,
+            fin: o.fin,
+            horas: toF(o.horas),
+            detalle: o.detalle,
+          };
+        }),
+        hoy: tablas[2].map(parsePozoDia),
+        ts: now,
+      };
+    } catch (e) {
+      console.warn("[DB] Resumen de pozos fetch failed:", e.message);
+    }
+    return cache.pozosResumen;
+  }
+
+  function delPozo(lista, nombre) {
+    return lista.filter(function (r) {
+      return r.pozo === nombre;
+    });
+  }
+  function getPozoDias(nombre) {
+    return delPozo(cache.pozosResumen.dias, nombre);
+  }
+  function getPozoEventos(nombre) {
+    return delPozo(cache.pozosResumen.eventos, nombre);
+  }
+  function getPozoHoy(nombre) {
+    return delPozo(cache.pozosResumen.hoy, nombre)[0] || null;
+  }
+
   /* ── PUBLIC API ── */
 
   /* A device that hasn't reported within STALE_MS is shown as communication loss */
@@ -655,6 +726,7 @@ const DB = (function () {
     cache.pozos = { rows: [], ts: 0 };
     cache.coordenadas = { rows: [], ts: 0 };
     cache.resumen = { hora: [], cierre: [], ts: 0 };
+    cache.pozosResumen = { dias: [], eventos: [], hoy: [], ts: 0 };
     try { localStorage.removeItem("tn_erb"); } catch(e){}
     try { localStorage.removeItem("tn_pz"); } catch(e){}
     try { localStorage.removeItem("tn_coords"); } catch(e){}
@@ -679,6 +751,10 @@ const DB = (function () {
     getERBHistory,
     getERBHistoryRange,
     loadResumen,
+    loadPozosResumen,
+    getPozoDias,
+    getPozoEventos,
+    getPozoHoy,
     getERBResumenHora,
     getERBDiaEnCurso,
     getERBCierres,

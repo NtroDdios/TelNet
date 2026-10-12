@@ -1134,6 +1134,17 @@ body.light input[type="datetime-local"] { color-scheme:light; }
 .cierre-table th:last-child, .cierre-table td:last-child { text-align: left; }
 .cierre-aviso { color: var(--orange); }
 .cierre-nota { font-size: .72rem; color: var(--txt3); margin-top: .9rem; }
+
+/* Disponibilidad de pozo */
+.disp-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--bg3); margin-top: .9rem; }
+.disp-bar i, .disp-leyenda i { display: block; }
+.disp-leyenda { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin-top: .5rem; font-size: .72rem; color: var(--txt2); }
+.disp-leyenda span { display: inline-flex; align-items: center; gap: .35rem; }
+.disp-leyenda i { width: 9px; height: 9px; border-radius: 2px; }
+.disp-bar .op, .disp-leyenda .op { background: #2ecc71; }
+.disp-bar .paro, .disp-leyenda .paro { background: #f39c12; }
+.disp-bar .sc, .disp-leyenda .sc { background: #5b6b80; }
+.disp-sub { font-size: .8rem; font-weight: 600; margin-top: 1.25rem; }
 .tank-det-card {
   background: var(--bg2); border: 1px solid var(--border); cursor: pointer; transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
   border-radius: var(--r); padding: 1.25rem; display: flex; flex-direction: column;

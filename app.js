@@ -1895,7 +1895,7 @@ on("pozo-detail", async (params) => {
   _pdCustomFrom = null;
   _pdCustomTo = null;
   showLoading("Cargando pozo...");
-  await DB.loadPozos().catch(() => {});
+  await Promise.all([DB.loadPozos().catch(() => {}), DB.loadPozosResumen()]);
   hideLoading();
   renderPozoDetail(_pdNombre, _pdRange);
 
@@ -1922,7 +1922,7 @@ on("pozo-detail", async (params) => {
   el("pd-refresh-btn").onclick = async () => {
     DB.forceRefresh();
     showLoading("Actualizando desde Google Sheets...");
-    await DB.loadPozos();
+    await Promise.all([DB.loadPozos().catch(() => {}), DB.loadPozosResumen()]);
     hideLoading();
     renderPozoDetail(_pdNombre, _pdRange, _pdCustomFrom, _pdCustomTo);
   };
@@ -1961,6 +1961,7 @@ on("pozo-detail", async (params) => {
 
 function renderPozoDetail(nombre, range, customFrom, customTo) {
   CHR.destroyAll();
+  renderPozoDisp(nombre);
   const latest = DB.getPozoLatest(nombre);
   if (!latest) {
     el("pd-metrics").innerHTML =
@@ -2167,6 +2168,101 @@ function renderPozoDetail(nombre, range, customFrom, customTo) {
       50 * (chartDefs.length + i),
     );
   });
+}
+
+/* Disponibilidad del pozo por día operativo (05:00 → 05:00) y eventos de paro */
+function renderPozoDisp(nombre) {
+  const box = el("pd-disp");
+  if (!box) return;
+  const dias = DB.getPozoDias(nombre);
+  const hoy = DB.getPozoHoy(nombre);
+  const eventos = DB.getPozoEventos(nombre);
+  if (!dias.length && !hoy) {
+    box.innerHTML = `<p class="cierre-nota">${_t("Resumen no disponible por ahora.")}</p>`;
+    return;
+  }
+  const h = (n) => (n == null ? "—" : n.toFixed(1));
+  const fechaCorta = (f) => (f ? f.split("-").reverse().join("/") : "—");
+  const barra = (x) => {
+    const tot = x.operando + x.paro + x.sinCom || 1;
+    const pct = (v) => ((v / tot) * 100).toFixed(1);
+    return `<div class="disp-bar" title="${h(x.operando)} h / ${h(x.paro)} h / ${h(x.sinCom)} h">
+        <i class="op" style="width:${pct(x.operando)}%"></i><i class="paro" style="width:${pct(x.paro)}%"></i><i class="sc" style="width:${pct(x.sinCom)}%"></i>
+      </div>`;
+  };
+  const tarjeta = (titulo, sub, x) => `
+    <div class="cierre-card">
+      <div class="cierre-head"><strong>${titulo}</strong><span>${sub}</span></div>
+      <div class="cierre-kpis">
+        <div><span class="cierre-val">${x.disponibilidad.toFixed(0)}%</span><span class="cierre-lbl">${_t("Disponibilidad")}</span></div>
+        <div><span class="cierre-val">${x.paros}</span><span class="cierre-lbl">${_t("Paros")}</span></div>
+      </div>
+      ${barra(x)}
+      <div class="disp-leyenda">
+        <span><i class="op"></i>${_t("Operando")} ${h(x.operando)} h</span>
+        <span><i class="paro"></i>${_t("Paro")} ${h(x.paro)} h</span>
+        <span><i class="sc"></i>${_t("Sin comunicación")} ${h(x.sinCom)} h</span>
+      </div>
+    </div>`;
+  const ult = dias[dias.length - 1];
+  const ult30 = dias.slice(-30);
+  const recientes = eventos.slice(-15).reverse();
+
+  box.innerHTML = `
+    <div class="cierre-cols">
+      ${hoy ? tarjeta(_t("Día en curso"), `${_t("Desde 05:00 hasta")} ${esc(((hoy.ultima || "").split(" ")[1] || "").split(":").slice(0, 2).join(":"))}`, hoy) : ""}
+      ${ult ? tarjeta(`${_t("Último cierre")}: ${fechaCorta(ult.fecha)} 05:00`, `${_t("Última lectura")}: ${esc(ult.ultima)}`, ult) : ""}
+    </div>
+    <div class="cierre-chart-wrap"><canvas id="disp-chart"></canvas></div>
+    <h4 class="disp-sub">${_t("Eventos recientes")}</h4>
+    ${
+      recientes.length
+        ? `<div class="cierre-table-wrap"><table class="cierre-table">
+        <thead><tr><th>${_t("Tipo")}</th><th>${_t("Inicio")}</th><th>${_t("Fin")}</th><th>${_t("Horas")}</th><th>${_t("Detalle")}</th></tr></thead>
+        <tbody>${recientes
+          .map(
+            (e) => `<tr>
+          <td class="${e.tipo === "PARO" ? "cierre-aviso" : ""}">${esc(e.tipo)}</td>
+          <td>${esc(e.inicio)}</td><td>${esc(e.fin)}</td><td>${h(e.horas)}</td><td>${esc(e.detalle) || "—"}</td></tr>`,
+          )
+          .join("")}</tbody></table></div>`
+        : `<p class="cierre-nota">${_t("Sin paros ni pérdidas de comunicación registradas.")}</p>`
+    }
+    <p class="cierre-nota">${_t("Paro = el variador reporta frecuencia 0. Sin comunicación = más de 30 min sin datos del pozo. Se listan paros de 15 min o más y pérdidas de comunicación de 1 h o más.")}</p>
+  `;
+
+  setTimeout(() => {
+    CHR.create("disp-chart", {
+      type: "bar",
+      data: {
+        labels: ult30.map((d) => fechaCorta(d.fecha).slice(0, 5)),
+        datasets: [
+          { label: _t("Operando"), data: ult30.map((d) => d.operando), backgroundColor: "#2ecc71" },
+          { label: _t("Paro"), data: ult30.map((d) => d.paro), backgroundColor: "#f39c12" },
+          { label: _t("Sin comunicación"), data: ult30.map((d) => d.sinCom), backgroundColor: "#5b6b80" },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#7b8ea8" } } },
+        scales: {
+          x: {
+            stacked: true,
+            ticks: { color: "#7b8ea8", font: { size: 10 }, maxRotation: 0 },
+            grid: { display: false },
+          },
+          y: {
+            stacked: true,
+            min: 0,
+            max: 24,
+            ticks: { color: "#7b8ea8", font: { size: 10 }, stepSize: 6 },
+            grid: { color: "rgba(255,255,255,0.05)" },
+          },
+        },
+      },
+    });
+  }, 200);
 }
 
 /* ──────────────────────────────────────────────

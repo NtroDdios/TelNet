@@ -148,6 +148,8 @@ function pozFila(st, r, eventos) {
   // Hueco de comunicación: el evento va de la última fila a la siguiente
   if (w.ultimo != null && ms - w.ultimo > POZ.toleranciaMin * 60 * 1000) {
     pozEvento(eventos, w, "SIN COMUNICACION", w.ultimo, ms, "");
+    // Un paro que pasa por un hueco no se sabe cuánto duró de verdad: se anota en el evento
+    if (w.paroDesde != null) w.paroSinCom = (w.paroSinCom || 0) + (ms - w.ultimo);
   }
   pozAvanzar(w, ms);
 
@@ -158,10 +160,15 @@ function pozFila(st, r, eventos) {
     acc.paros++;
     w.paroDesde = ms;
     w.paroTexto = String(r[12] || "").trim();
+    w.paroSinCom = 0;
   }
   if (estado === "OPERANDO" && w.estado === "PARO" && w.paroDesde != null) {
-    pozEvento(eventos, w, "PARO", w.paroDesde, ms, w.paroTexto);
+    var detalle = w.paroTexto;
+    if (w.paroSinCom)
+      detalle += " · incluye " + pozRedondear(w.paroSinCom / POZ_H, 2) + " h sin comunicación";
+    pozEvento(eventos, w, "PARO", w.paroDesde, ms, detalle);
     w.paroDesde = null;
+    w.paroSinCom = 0;
   }
   if (estado === "OPERANDO") {
     // RPM variador, corriente, PTP, temperatura del generador
@@ -321,12 +328,14 @@ function instalarActivadorPozos() {
   console.log("Activador instalado: actualizarResumenPozos cada hora.");
 }
 
-/* Borra las pestañas de resumen y el estado para recalcular toda la historia. */
+/* Vacía las pestañas de resumen y borra el estado para recalcular toda la historia.
+   Las pestañas se conservan para no cambiar sus gid (la app las pide por gid). */
 function reiniciarResumenPozos() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   [POZ.hojaDia, POZ.hojaEventos, POZ.hojaHoy].forEach(function (n) {
     var sh = ss.getSheetByName(n);
-    if (sh) ss.deleteSheet(sh);
+    if (sh && sh.getLastRow() > 1)
+      sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).clearContent();
   });
   PropertiesService.getScriptProperties().deleteProperty(POZ.claveEstado);
   console.log("Resumen de pozos reiniciado. Ejecute actualizarResumenPozos para recalcular.");
