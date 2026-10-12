@@ -4,12 +4,17 @@
 
 const DB = (function () {
   /* ── Spreadsheet CSV URLs ── */
-  var ESTACIONES_CSV =
+  var E41_PUB =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vRquP2hMacKcZRBshBCQh1w3Ad5cIJaY4mV03zKHPaPVp2Bmb1tvPh-HihmZbVeiH63E4CZLjWLPOXu/pub?output=csv";
+  var ESTACIONES_CSV = E41_PUB + "&gid=0";
   var POZOS_CSV =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vT_8dadg9C3qMvGt9nHj29zA4gpewQt_5J1DToV9jtunqdS-qDY9WaBZ89YBhhGvZIx9AQSAdQBDov1/pub?output=csv&gid=0";
   var COORDENADAS_CSV =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vT_8dadg9C3qMvGt9nHj29zA4gpewQt_5J1DToV9jtunqdS-qDY9WaBZ89YBhhGvZIx9AQSAdQBDov1/pub?output=csv&gid=48860810";
+  /* Pestañas que llena google_apps_script_e41_resumen.js en la hoja de E41 */
+  var RESUMEN_HORA_CSV = E41_PUB + "&gid=541439107";
+  var CIERRE_CSV = E41_PUB + "&gid=375527899";
+  var RESUMEN_TTL = 10 * 60 * 1000; // el resumen se recalcula cada hora
 
   var MAX_ROWS = 250000;
   var TTL = 30000; // 30 seconds — keeps live data fresh
@@ -19,6 +24,7 @@ const DB = (function () {
     erb: { rows: [], ts: 0 },
     pozos: { rows: [], ts: 0 },
     coordenadas: { rows: [], ts: 0 },
+    resumen: { hora: [], cierre: [], ts: 0 },
   };
 
   /* ── Static geodata ── */
@@ -310,6 +316,96 @@ const DB = (function () {
     return cache.coordenadas.rows;
   }
 
+  /* ── Resumen E41 (RESUMEN_HORA y CIERRE_0500) ──
+     Se lee por nombre de columna para que agregar columnas en la hoja no rompa la app. */
+  var RES_TANQUES = ["TV-601", "TV-602", "TV-741"];
+
+  async function fetchTabla(url) {
+    var separator = url.indexOf("?") !== -1 ? "&" : "?";
+    var res = await fetch(url + separator + "t=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    var lines = (await res.text()).split(/\r?\n/).filter(function (l) {
+      return l.trim();
+    });
+    if (!lines.length) return [];
+    var head = csvSplit(lines[0]).map(function (h) {
+      return h.trim();
+    });
+    return lines.slice(1).map(function (line) {
+      var p = csvSplit(line);
+      var o = {};
+      head.forEach(function (h, i) {
+        o[h] = p[i] != null ? p[i].trim() : "";
+      });
+      return o;
+    });
+  }
+
+  function parseResumenHora(rows) {
+    return rows.map(function (o) {
+      var r = {
+        ts: o.hora,
+        dia: o.dia_operativo,
+        muestras: toI(o.muestras),
+        existencia: RES_TANQUES.map(function (t) {
+          return toN(o[t + " existencia_bbl"]);
+        }),
+        totalExistencia: toN(o.total_existencia_bbl),
+        totalCambio: toN(o.total_cambio_bbl),
+        sube: toF(o.total_sube_bbl),
+        baja: toF(o.total_baja_bbl),
+      };
+      // Mismas claves que las filas crudas para reutilizar las gráficas
+      r.niv601 = toN(o["TV-601 nivel_m"]);
+      r.niv602 = toN(o["TV-602 nivel_m"]);
+      r.niv741 = toN(o["TV-741 nivel_m"]);
+      return r;
+    });
+  }
+
+  function parseCierre(rows) {
+    return rows.map(function (o) {
+      return {
+        fecha: o.fecha_cierre,
+        horas: toI(o.horas_con_datos),
+        tanques: RES_TANQUES.map(function (t) {
+          return {
+            nombre: t,
+            existencia: toN(o[t + " existencia_bbl"]),
+            cambio: toN(o[t + " cambio_bbl"]),
+            sube: toF(o[t + " sube_bbl"]),
+            baja: toF(o[t + " baja_bbl"]),
+            estado: o[t + " estado"] || "",
+          };
+        }),
+        totalExistencia: toN(o.total_existencia_bbl),
+        totalCambio: toN(o.total_cambio_bbl),
+        recibido: toF(o.recibido_bbl),
+        enviado: toF(o.enviado_bbl),
+      };
+    });
+  }
+
+  async function loadResumen() {
+    var now = Date.now();
+    if (cache.resumen.ts && now - cache.resumen.ts < RESUMEN_TTL)
+      return cache.resumen;
+    try {
+      var tablas = await Promise.all([
+        fetchTabla(RESUMEN_HORA_CSV),
+        fetchTabla(CIERRE_CSV),
+      ]);
+      cache.resumen = {
+        hora: parseResumenHora(tablas[0]),
+        cierre: parseCierre(tablas[1]),
+        ts: now,
+      };
+    } catch (e) {
+      console.warn("[DB] Resumen fetch failed:", e.message);
+    }
+    return cache.resumen;
+  }
+
   /* ── PUBLIC API ── */
 
   /* A device that hasn't reported within STALE_MS is shown as communication loss */
@@ -352,6 +448,48 @@ const DB = (function () {
       var d = parseDate(row.ts);
       return d !== null && d >= fromDate && d <= toDate;
     });
+  }
+
+  /* Filas horarias del resumen dentro del rango (para 7D, 30D y rangos largos) */
+  function getERBResumenHora(fromDate, toDate) {
+    return cache.resumen.hora.filter(function (row) {
+      var d = parseDate(row.ts);
+      return d !== null && d >= fromDate && d <= toDate;
+    });
+  }
+
+  /* Día operativo en curso: horas desde el último cierre de las 05:00 */
+  function getERBDiaEnCurso() {
+    var h = cache.resumen.hora;
+    if (!h.length) return null;
+    var dia = h[h.length - 1].dia;
+    var horas = h.filter(function (r) {
+      return r.dia === dia;
+    });
+    var ultimoCierre = cache.resumen.cierre.length
+      ? cache.resumen.cierre[cache.resumen.cierre.length - 1]
+      : null;
+    var fin = horas[horas.length - 1];
+    return {
+      fecha: dia,
+      horas: horas.length,
+      hasta: fin.ts,
+      totalExistencia: fin.totalExistencia,
+      totalCambio:
+        ultimoCierre && ultimoCierre.totalExistencia != null && fin.totalExistencia != null
+          ? fin.totalExistencia - ultimoCierre.totalExistencia
+          : null,
+      recibido: horas.reduce(function (a, r) {
+        return a + r.sube;
+      }, 0),
+      enviado: horas.reduce(function (a, r) {
+        return a + r.baja;
+      }, 0),
+    };
+  }
+
+  function getERBCierres() {
+    return cache.resumen.cierre;
   }
 
   function getEstaciones() {
@@ -516,6 +654,7 @@ const DB = (function () {
     cache.erb = { rows: [], ts: 0 };
     cache.pozos = { rows: [], ts: 0 };
     cache.coordenadas = { rows: [], ts: 0 };
+    cache.resumen = { hora: [], cierre: [], ts: 0 };
     try { localStorage.removeItem("tn_erb"); } catch(e){}
     try { localStorage.removeItem("tn_pz"); } catch(e){}
     try { localStorage.removeItem("tn_coords"); } catch(e){}
@@ -539,6 +678,10 @@ const DB = (function () {
     getERBDetalle,
     getERBHistory,
     getERBHistoryRange,
+    loadResumen,
+    getERBResumenHora,
+    getERBDiaEnCurso,
+    getERBCierres,
     getLatestERB,
     getPozos,
     getPozoLatest,

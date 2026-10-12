@@ -1402,7 +1402,7 @@ let _erbCustomFrom = null,
 
 on("erb-detail", async (params) => {
   showLoading("Cargando estación...");
-  await DB.loadERB().catch(() => {});
+  await Promise.all([DB.loadERB().catch(() => {}), DB.loadResumen()]);
   hideLoading();
   _erbRange = "24H";
   _erbCustomFrom = null;
@@ -1432,7 +1432,7 @@ on("erb-detail", async (params) => {
   el("ed-refresh-btn").onclick = async () => {
     DB.forceRefresh();
     showLoading("Actualizando desde Google Sheets...");
-    await DB.loadERB();
+    await Promise.all([DB.loadERB().catch(() => {}), DB.loadResumen()]);
     hideLoading();
     renderERBDetail(_erbRange, _erbCustomFrom, _erbCustomTo);
   };
@@ -1476,6 +1476,21 @@ function rangeHours(r) {
   return map[r] || 24;
 }
 
+/* Rangos de más de 48 h salen del resumen por hora: pesa mucho menos que la
+   telemetría cruda y cubre toda la historia. Si aún no carga, se usa la cruda. */
+function erbHistorial(range, customFrom, customTo) {
+  const custom = range === "CUSTOM" && customFrom && customTo;
+  const to = custom ? customTo : new Date();
+  const from = custom ? customFrom : new Date(to - rangeHours(range) * 3600e3);
+  if (to - from > 48 * 3600e3) {
+    const h = DB.getERBResumenHora(from, to);
+    if (h.length) return h;
+  }
+  return custom
+    ? DB.getERBHistoryRange(customFrom, customTo)
+    : DB.getERBHistory(rangeHours(range));
+}
+
 function renderERBDetail(range, customFrom, customTo) {
   CHR.destroyAll();
   const d = DB.getERBDetalle();
@@ -1506,10 +1521,7 @@ function renderERBDetail(range, customFrom, customTo) {
   });
 
   const hours = rangeHours(range);
-  const history =
-    range === "CUSTOM" && customFrom && customTo
-      ? DB.getERBHistoryRange(customFrom, customTo)
-      : DB.getERBHistory(hours);
+  const history = erbHistorial(range, customFrom, customTo);
 
   // Metrics – tanks
   const tanks = d.tanks;
@@ -1664,6 +1676,122 @@ function renderERBDetail(range, customFrom, customTo) {
       });
     }, 50 * i);
   });
+
+  renderERBCierre();
+}
+
+/* Cierre del día operativo (05:00 → 05:00), como en el parte diario */
+function renderERBCierre() {
+  const box = el("ed-cierre");
+  if (!box) return;
+  const cierres = DB.getERBCierres();
+  const enCurso = DB.getERBDiaEnCurso();
+  if (!cierres.length && !enCurso) {
+    box.innerHTML = `<p class="cierre-nota">${_t("Resumen no disponible por ahora.")}</p>`;
+    return;
+  }
+  const fmt = (n) =>
+    n == null ? "—" : n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  const fmtS = (n) => (n == null ? "—" : (n > 0 ? "+" : "") + fmt(n));
+  const fechaCorta = (f) => (f ? f.split("-").reverse().join("/") : "—");
+  const kpis = (x) => `
+      <div class="cierre-kpis">
+        <div><span class="cierre-val">${fmt(x.totalExistencia)}</span><span class="cierre-lbl">${_t("Existencia")} (bbl)</span></div>
+        <div><span class="cierre-val">${fmtS(x.totalCambio)}</span><span class="cierre-lbl">${_t("Cambio")} (bbl)</span></div>
+        <div><span class="cierre-val">${fmt(x.recibido)}</span><span class="cierre-lbl">${_t("Recibido")} (bbl)</span></div>
+        <div><span class="cierre-val">${fmt(x.enviado)}</span><span class="cierre-lbl">${_t("Enviado")} (bbl)</span></div>
+      </div>`;
+  const avisos = (c) =>
+    c.tanques
+      .filter((t) => t.estado && t.estado !== "OK")
+      .map((t) => `${esc(t.nombre)}: ${esc(t.estado)}`)
+      .join(", ");
+  const ult = cierres[cierres.length - 1];
+  const recientes = cierres.slice(-10).reverse();
+
+  box.innerHTML = `
+    <div class="cierre-cols">
+      ${
+        enCurso
+          ? `<div class="cierre-card">
+        <div class="cierre-head"><strong>${_t("Día en curso")}</strong>
+          <span>${_t("Desde 05:00 hasta")} ${esc((enCurso.hasta || "").slice(11))} · ${enCurso.horas} h</span></div>
+        ${kpis(enCurso)}
+      </div>`
+          : ""
+      }
+      ${
+        ult
+          ? `<div class="cierre-card">
+        <div class="cierre-head"><strong>${_t("Último cierre")}: ${fechaCorta(ult.fecha)} 05:00</strong>
+          <span>${ult.horas} ${_t("h con datos")}${avisos(ult) ? " · " + avisos(ult) : ""}</span></div>
+        ${kpis(ult)}
+      </div>`
+          : ""
+      }
+    </div>
+    <div class="cierre-chart-wrap"><canvas id="cierre-chart"></canvas></div>
+    <div class="cierre-table-wrap">
+      <table class="cierre-table">
+        <thead><tr>
+          <th>${_t("Cierre")}</th><th>${_t("Existencia")}</th><th>${_t("Cambio")}</th>
+          <th>${_t("Recibido")}</th><th>${_t("Enviado")}</th><th>${_t("Horas")}</th><th>${_t("Avisos")}</th>
+        </tr></thead>
+        <tbody>
+          ${recientes
+            .map(
+              (c) => `<tr>
+            <td>${fechaCorta(c.fecha)}</td><td>${fmt(c.totalExistencia)}</td><td>${fmtS(c.totalCambio)}</td>
+            <td>${fmt(c.recibido)}</td><td>${fmt(c.enviado)}</td><td>${c.horas}</td>
+            <td class="cierre-aviso">${avisos(c) || "—"}</td></tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+    <p class="cierre-nota">${_t("Recibido y enviado se calculan por balance de nivel de los tanques (los trasiegos entre tanques se cancelan); no sustituyen la medición.")}</p>
+  `;
+
+  const ult30 = cierres.slice(-30);
+  setTimeout(() => {
+    CHR.create("cierre-chart", {
+      type: "bar",
+      data: {
+        labels: ult30.map((c) => fechaCorta(c.fecha).slice(0, 5)),
+        datasets: [
+          {
+            label: _t("Recibido"),
+            data: ult30.map((c) => c.recibido),
+            backgroundColor: "#2ecc71",
+          },
+          {
+            label: _t("Enviado"),
+            data: ult30.map((c) => c.enviado),
+            backgroundColor: "#4d9ffc",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { labels: { color: "#7b8ea8" } } },
+        scales: {
+          x: {
+            ticks: { color: "#7b8ea8", font: { size: 10 }, maxRotation: 0 },
+            grid: { display: false },
+          },
+          y: {
+            ticks: {
+              color: "#7b8ea8",
+              font: { size: 10 },
+              callback: (v) => fmt(v),
+            },
+            grid: { color: "rgba(255,255,255,0.05)" },
+          },
+        },
+      },
+    });
+  }, 200);
 }
 
 /* ──────────────────────────────────────────────
@@ -2753,8 +2881,7 @@ function openTankChartModal(index) {
   el("modal-title").textContent = `Histórico de Nivel - Tanque ${t.nombre}`;
   modal.classList.remove("hidden");
 
-  const hours = rangeHours(_erbRange);
-  const history = DB.getERBHistory(hours);
+  const history = erbHistorial(_erbRange, _erbCustomFrom, _erbCustomTo);
   const { labels, vals } = erbSerieBbl(history, index);
   const capMax = Math.ceil(t.altMax * ERB_BBL_POR_M[index]) || undefined;
 
