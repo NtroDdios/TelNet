@@ -1066,13 +1066,180 @@ function haceCuanto(f) {
 /* Un pozo que no reporta en más de 7 días se lista aparte como inactivo, sin alarma */
 const POZO_INACTIVO_MS = 7 * 86400e3;
 
+const ICONO_ALERTA =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
+
+/* ── Piezas compartidas por el inicio y las listas ── */
+
+/* Estado de la estación E41 con sus tanques y las alarmas que genera */
+function estadoERB() {
+  const d = DB.getERBDetalle();
+  if (!d) return null;
+  const fresco = !DB.isStale(d.ts);
+  const ultimas = DB.getERBUltimas(90);
+  const tanks = d.tanks.map((t, i) => erbTanque(t, i, d, ultimas));
+  const alarmas = [];
+  if (!fresco) alarmas.push(["critica", `ERB E41: ${_t("sin datos desde")} ${d.ts}`]);
+  tanks.forEach((t) => {
+    if (t.estado === "alta") alarmas.push(["alta", `${t.nombre}: ${_t("nivel alto")} (${t.pct.toFixed(0)} %)`]);
+    if (t.estado === "baja") alarmas.push(["aviso", `${t.nombre}: ${_t("nivel bajo")} (${t.pct.toFixed(0)} %)`]);
+    if (t.estado === "falla") alarmas.push(["falla", `${t.nombre}: ${_t("sin lectura de nivel")}`]);
+  });
+  const vivos = tanks.filter((t) => !t.falla);
+  const conTasa = vivos.filter((t) => t.tasa != null);
+  return {
+    d,
+    fresco,
+    tanks,
+    alarmas,
+    inv: vivos.reduce((a, t) => a + t.bbl, 0),
+    neto: conTasa.length ? conTasa.reduce((a, t) => a + t.tasa, 0) : null,
+  };
+}
+
+/* Tarjeta de estación (inicio y lista de estaciones) */
+function tarjetaERB(e, extendida) {
+  const { d, fresco, tanks } = e;
+  return `
+    <button type="button" class="hb-erb${extendida ? " hb-erb-lista" : ""}" data-ir="erb-detail" data-nombre="${esc(d.nombre)}">
+      <span class="hb-erb-head">
+        <span class="hb-nombre">${esc(d.nombre)}${extendida ? `<small>${esc(d.sector)}</small>` : ""}</span>
+        <span class="hb-chip ${fresco ? "ok" : "off"}">${fresco ? _t("En línea") : _t("Sin datos")}</span>
+      </span>
+      <span class="hb-tanques">${tanks
+        .map(
+          (t) => `<span class="hb-tq est-${t.estado}">
+            <span class="hb-tq-body"><i style="height:${t.falla ? 0 : Math.min(100, t.pct).toFixed(0)}%"></i></span>
+            <b>${t.falla ? "—" : t.pct.toFixed(0) + " %"}</b>
+            <small>${esc(t.nombre)}</small>
+          </span>`,
+        )
+        .join("")}</span>
+      <span class="hb-erb-nums">
+        <span><span class="kpi-val">${fmtBbl(e.inv)}<small>bbl</small></span><span class="kpi-sub">${_t("inventario")}</span></span>
+        <span><span class="kpi-val">${fmtSigno(e.neto)}<small>bbl/h</small></span><span class="kpi-sub">${_t("balance, última hora")}</span></span>
+      </span>
+      ${
+        extendida
+          ? `<span class="hb-erb-pie">
+              <span>${e.alarmas.length ? `<b class="hb-pie-alm">${e.alarmas.length} ${e.alarmas.length === 1 ? _t("alarma") : _t("alarmas")}</b>` : _t("Sin alarmas")}</span>
+              <span>${_t("Último dato")}: ${esc(haceCuanto(DB.parseDate(d.ts)))}</span>
+            </span>`
+          : ""
+      }
+    </button>`;
+}
+
+/* Estado de un pozo para el tablero y la lista */
+function estadoPozo(p) {
+  const f = DB.parseDate(p.ts);
+  const inactivo = !f || Date.now() - f > POZO_INACTIVO_MS;
+  const lat = p.latest || {};
+  const hoy = DB.getPozoHoy(p.nombre);
+  const stale = DB.isStale(p.ts);
+  const paro = !stale && lat.tipo === "ALARMA";
+  let estado = "ok";
+  let texto = _t("Operando");
+  let alarma = null;
+  if (inactivo) {
+    estado = "inact";
+    texto = `${_t("Sin reportar desde")} ${haceCuanto(f)}`;
+  } else if (stale) {
+    estado = "off";
+    texto = `${_t("Sin comunicación desde")} ${haceCuanto(f).replace(/^Hace/, "hace")}`;
+    alarma = ["aviso", `${p.nombre}: ${_t("sin comunicación desde")} ${p.ts}`];
+  } else if (paro) {
+    estado = "paro";
+    const desde = hoy && /^PARO desde /.test(hoy.estado) ? hoy.estado.replace("PARO desde ", "") : p.ts;
+    texto = `${_t("En paro desde")} ${desde.slice(11, 16) || desde}`;
+    alarma = ["alta", `${p.nombre}: ${_t("en paro desde")} ${desde}`];
+  }
+  return { p, f, lat, hoy, estado, texto, alarma, inactivo };
+}
+
+const ORDEN_ESTADO_POZO = { paro: 0, off: 1, ok: 2, inact: 3 };
+function ordenarPozos(lista) {
+  return lista.sort((a, b) => ORDEN_ESTADO_POZO[a.estado] - ORDEN_ESTADO_POZO[b.estado] || a.p.nombre.localeCompare(b.p.nombre));
+}
+
+function barraDisponibilidad(h) {
+  if (!h) return `<span class="hb-disp"><span class="disp-bar"></span><b>—</b></span>`;
+  const tot = h.operando + h.paro + h.sinCom || 1;
+  const pct = (v) => ((v / tot) * 100).toFixed(1);
+  return `<span class="hb-disp" title="${_t("Desde 05:00")}: ${h.operando.toFixed(1)} h ${_t("operando")}, ${h.paro.toFixed(1)} h ${_t("paro")}, ${h.sinCom.toFixed(1)} h ${_t("sin comunicación")}">
+    <span class="disp-bar"><i class="op" style="width:${pct(h.operando)}%"></i><i class="paro" style="width:${pct(h.paro)}%"></i><i class="sc" style="width:${pct(h.sinCom)}%"></i></span>
+    <b>${((h.operando / tot) * 100).toFixed(0)} %</b>
+  </span>`;
+}
+
+/* Mini tendencia (SVG) de una variable del pozo en las últimas 24 h; los paros cortan la línea */
+function miniTendencia(nombre, key) {
+  const filas = DB.getPozoHistory(nombre, 24);
+  if (filas.length < 2) return `<span class="pz-spark pz-spark-vacia">${_t("sin lecturas en 24 h")}</span>`;
+  const paso = Math.max(1, Math.floor(filas.length / 120));
+  const pts = filas.filter((_, i) => i % paso === 0).map((r) => ({ t: DB.parseDate(r.ts), v: r[key] }));
+  const vals = pts.map((p) => p.v).filter((v) => v != null);
+  if (!vals.length) return `<span class="pz-spark pz-spark-vacia">—</span>`;
+  const t0 = pts[0].t;
+  const t1 = pts[pts.length - 1].t;
+  let min = Math.min(...vals);
+  let max = Math.max(...vals);
+  const medio = (min + max) / 2;
+  const media = Math.max((max - min) / 2, Math.abs(medio) * 0.05, 0.5);
+  min = medio - media;
+  max = medio + media;
+  const W = 120;
+  const H = 28;
+  const x = (t) => (t1 > t0 ? ((t - t0) / (t1 - t0)) * W : 0);
+  const y = (v) => H - 2 - ((v - min) / (max - min)) * (H - 4);
+  const tramos = [];
+  let tramo = [];
+  pts.forEach((p) => {
+    if (p.v == null || !p.t) {
+      if (tramo.length) tramos.push(tramo);
+      tramo = [];
+    } else tramo.push(`${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`);
+  });
+  if (tramo.length) tramos.push(tramo);
+  return `<svg class="pz-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${tramos
+    .map((t) => (t.length === 1 ? `<circle cx="${t[0].split(",")[0]}" cy="${t[0].split(",")[1]}" r="1.2"/>` : `<polyline points="${t.join(" ")}"/>`))
+    .join("")}</svg>`;
+}
+
+/* Fila de pozo; `extendida` agrega sector, mini tendencia y corriente (lista de pozos) */
+function filaPozo(a, extendida) {
+  const num = (v, d, u) => (v == null ? "—" : `${v.toFixed(d)}<small> ${u}</small>`);
+  return `<button type="button" class="hb-pz est-${a.estado}${extendida ? " hb-pz-ext" : ""}" data-ir="pozo-detail" data-nombre="${esc(a.p.nombre)}">
+    <span class="hb-pz-nombre">${esc(a.p.nombre)}${extendida ? `<small>${esc(a.p.sector)} · ${esc(a.p.campo)}</small>` : ""}</span>
+    <span class="hb-pz-estado"><i></i>${esc(a.texto)}</span>
+    ${a.inactivo ? "<span></span>" : barraDisponibilidad(a.hoy)}
+    ${extendida ? (a.inactivo ? "<span></span>" : miniTendencia(a.p.nombre, "rpm")) : ""}
+    <span class="hb-pz-num">${num(a.lat.rpm, 1, "rpm")}</span>
+    ${extendida ? `<span class="hb-pz-num">${num(a.lat.I, 1, "A")}</span>` : ""}
+    <span class="hb-pz-ts">${esc(haceCuanto(a.f))}</span>
+  </button>`;
+}
+
+function encabezadoPozos(extendida) {
+  const cols = extendida
+    ? ["Pozo", "Estado", "Disponibilidad desde 05:00", "Velocidad, 24 h", "Velocidad", "Corriente", "Último dato"]
+    : ["Pozo", "Estado", "Disponibilidad desde 05:00", "Velocidad", "Último dato"];
+  return `<div class="hb-pz-head${extendida ? " hb-pz-ext" : ""}" aria-hidden="true">${cols.map((c) => `<span>${_t(c)}</span>`).join("")}</div>`;
+}
+
+function enlazarNavegacion(box) {
+  $$("[data-ir]", box).forEach((b) =>
+    b.addEventListener("click", () => navigate(b.dataset.ir, { nombre: b.dataset.nombre })),
+  );
+}
+
 /* Tablero de estado de campo: alarmas, ERB E41 y cada pozo con su disponibilidad del día */
 function updateHomeStats() {
   const box = el("home-board");
   if (!box) return;
-  const d = DB.getERBDetalle();
+  const erb = estadoERB();
   const pozos = DB.getPozos();
-  if (!d && !pozos.length) {
+  if (!erb && !pozos.length) {
     box.innerHTML = `<p class="hb-cargando">${_t("Cargando estado de campo…")}</p>`;
     return;
   }
@@ -1081,123 +1248,25 @@ function updateHomeStats() {
   let reportando = 0;
   let total = 0;
   let ultimo = null;
-  const registrar = (ts) => {
-    const f = DB.parseDate(ts);
+  const registrar = (f) => {
     if (f && (!ultimo || f > ultimo)) ultimo = f;
-    return f;
   };
-
-  // ── ERB E41 ──
-  let erbHtml = "";
-  if (d) {
+  if (erb) {
     total++;
-    registrar(d.ts);
-    const fresco = !DB.isStale(d.ts);
-    if (fresco) reportando++;
-    else alarmas.push(["critica", `ERB E41: ${_t("sin datos desde")} ${d.ts}`]);
-    const ultimas = DB.getERBUltimas(90);
-    const tanks = d.tanks.map((t, i) => erbTanque(t, i, d, ultimas));
-    tanks.forEach((t) => {
-      if (t.estado === "alta") alarmas.push(["alta", `${t.nombre}: ${_t("nivel alto")} (${t.pct.toFixed(0)} %)`]);
-      if (t.estado === "baja") alarmas.push(["aviso", `${t.nombre}: ${_t("nivel bajo")} (${t.pct.toFixed(0)} %)`]);
-      if (t.estado === "falla") alarmas.push(["falla", `${t.nombre}: ${_t("sin lectura de nivel")}`]);
-    });
-    const vivos = tanks.filter((t) => !t.falla);
-    const inv = vivos.reduce((a, t) => a + t.bbl, 0);
-    const conTasa = vivos.filter((t) => t.tasa != null);
-    const neto = conTasa.length ? conTasa.reduce((a, t) => a + t.tasa, 0) : null;
-    erbHtml = `
-      <button type="button" class="hb-erb" data-ir="erb-detail" data-nombre="ERB E41">
-        <span class="hb-erb-head">
-          <span class="hb-nombre">ERB E41</span>
-          <span class="hb-chip ${fresco ? "ok" : "off"}">${fresco ? _t("En línea") : _t("Sin datos")}</span>
-        </span>
-        <span class="hb-tanques">${tanks
-          .map(
-            (t) => `<span class="hb-tq est-${t.estado}">
-              <span class="hb-tq-body"><i style="height:${t.falla ? 0 : Math.min(100, t.pct).toFixed(0)}%"></i></span>
-              <b>${t.falla ? "—" : t.pct.toFixed(0) + " %"}</b>
-              <small>${esc(t.nombre)}</small>
-            </span>`,
-          )
-          .join("")}</span>
-        <span class="hb-erb-nums">
-          <span><span class="kpi-val">${fmtBbl(inv)}<small>bbl</small></span><span class="kpi-sub">${_t("inventario")}</span></span>
-          <span><span class="kpi-val">${fmtSigno(neto)}<small>bbl/h</small></span><span class="kpi-sub">${_t("balance, última hora")}</span></span>
-        </span>
-      </button>`;
+    if (erb.fresco) reportando++;
+    registrar(DB.parseDate(erb.d.ts));
+    alarmas.push(...erb.alarmas);
   }
-
-  // ── Pozos ──
-  const activos = [];
-  const inactivos = [];
-  pozos.forEach((p) => {
-    const f = registrar(p.ts);
-    if (!f || Date.now() - f > POZO_INACTIVO_MS) {
-      inactivos.push(p);
-      return;
-    }
+  const estados = pozos.map(estadoPozo);
+  estados.forEach((a) => registrar(a.f));
+  const activos = ordenarPozos(estados.filter((a) => !a.inactivo));
+  const inactivos = estados.filter((a) => a.inactivo);
+  activos.forEach((a) => {
     total++;
-    const lat = p.latest || {};
-    const hoy = DB.getPozoHoy(p.nombre);
-    const stale = DB.isStale(p.ts);
-    const paro = !stale && lat.tipo === "ALARMA";
-    let estado = "ok";
-    let texto = _t("Operando");
-    if (stale) {
-      estado = "off";
-      texto = `${_t("Sin comunicación desde")} ${haceCuanto(f).replace(/^Hace/, "hace")}`;
-      alarmas.push(["aviso", `${p.nombre}: ${_t("sin comunicación desde")} ${p.ts}`]);
-    } else {
-      reportando++;
-      if (paro) {
-        estado = "paro";
-        const desde = hoy && /^PARO desde /.test(hoy.estado) ? hoy.estado.replace("PARO desde ", "") : p.ts;
-        texto = `${_t("En paro desde")} ${desde.slice(11, 16) || desde}`;
-        alarmas.push(["alta", `${p.nombre}: ${_t("en paro desde")} ${desde}`]);
-      }
-    }
-    activos.push({ p, lat, hoy, estado, texto, f });
+    if (a.estado !== "off") reportando++;
+    if (a.alarma) alarmas.push(a.alarma);
   });
-  const orden = { paro: 0, off: 1, ok: 2 };
-  activos.sort((a, b) => orden[a.estado] - orden[b.estado] || a.p.nombre.localeCompare(b.p.nombre));
 
-  const barra = (h) => {
-    if (!h) return `<span class="hb-disp"><span class="disp-bar"></span><b>—</b></span>`;
-    const tot = h.operando + h.paro + h.sinCom || 1;
-    const pct = (v) => ((v / tot) * 100).toFixed(1);
-    return `<span class="hb-disp" title="${_t("Desde 05:00")}: ${h.operando.toFixed(1)} h ${_t("operando")}, ${h.paro.toFixed(1)} h ${_t("paro")}, ${h.sinCom.toFixed(1)} h ${_t("sin comunicación")}">
-      <span class="disp-bar"><i class="op" style="width:${pct(h.operando)}%"></i><i class="paro" style="width:${pct(h.paro)}%"></i><i class="sc" style="width:${pct(h.sinCom)}%"></i></span>
-      <b>${(tot > 0 ? (h.operando / tot) * 100 : 0).toFixed(0)} %</b>
-    </span>`;
-  };
-  const pozosHtml = `
-    <div class="hb-pozos">
-      <div class="hb-pz-head" aria-hidden="true">
-        <span>${_t("Pozo")}</span><span>${_t("Estado")}</span><span>${_t("Disponibilidad desde 05:00")}</span><span>${_t("Velocidad")}</span><span>${_t("Último dato")}</span>
-      </div>
-      ${activos
-        .map(
-          (a) => `<button type="button" class="hb-pz est-${a.estado}" data-ir="pozo-detail" data-nombre="${esc(a.p.nombre)}">
-            <span class="hb-pz-nombre">${esc(a.p.nombre)}</span>
-            <span class="hb-pz-estado"><i></i>${esc(a.texto)}</span>
-            ${barra(a.hoy)}
-            <span class="hb-pz-num">${a.lat.rpm == null ? "—" : a.lat.rpm.toFixed(1)}<small> rpm</small></span>
-            <span class="hb-pz-ts">${esc(haceCuanto(a.f))}</span>
-          </button>`,
-        )
-        .join("")}
-      ${
-        inactivos.length
-          ? `<p class="hb-inactivos">${_t("Sin reportar en más de 7 días")}: ${inactivos
-              .map((p) => `<button type="button" class="hb-link" data-ir="pozo-detail" data-nombre="${esc(p.nombre)}">${esc(p.nombre)}</button>`)
-              .join(", ")}</p>`
-          : ""
-      }
-    </div>`;
-
-  const icono =
-    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16" aria-hidden="true"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
   box.innerHTML = `
     <div class="hb-resumen">
       <span class="hb-res-alm${alarmas.length ? " hay" : ""}">${
@@ -1206,12 +1275,22 @@ function updateHomeStats() {
       <span>${reportando}/${total} ${_t("equipos reportando")}</span>
       <span>${_t("Último dato")}: ${haceCuanto(ultimo)}</span>
     </div>
-    ${alarmas.length ? `<div class="scada-alarms">${alarmas.map(([c, t]) => `<div class="alm alm-${c}" role="status">${icono}<span>${esc(t)}</span></div>`).join("")}</div>` : ""}
-    <div class="hb-grid">${erbHtml}${pozosHtml}</div>`;
-
-  $$("[data-ir]", box).forEach((b) =>
-    b.addEventListener("click", () => navigate(b.dataset.ir, { nombre: b.dataset.nombre })),
-  );
+    ${alarmas.length ? `<div class="scada-alarms">${alarmas.map(([c, t]) => `<div class="alm alm-${c}" role="status">${ICONO_ALERTA}<span>${esc(t)}</span></div>`).join("")}</div>` : ""}
+    <div class="hb-grid">
+      ${erb ? tarjetaERB(erb, false) : ""}
+      <div class="hb-pozos">
+        ${encabezadoPozos(false)}
+        ${activos.map((a) => filaPozo(a, false)).join("")}
+        ${
+          inactivos.length
+            ? `<p class="hb-inactivos">${_t("Sin reportar en más de 7 días")}: ${inactivos
+                .map((a) => `<button type="button" class="hb-link" data-ir="pozo-detail" data-nombre="${esc(a.p.nombre)}">${esc(a.p.nombre)}</button>`)
+                .join(", ")}</p>`
+            : ""
+        }
+      </div>
+    </div>`;
+  enlazarNavegacion(box);
 }
 
 /* ──────────────────────────────────────────────
@@ -1252,56 +1331,19 @@ function renderERBList() {
   if (_erbSearch)
     list = list.filter((s) => s.nombre.toLowerCase().includes(_erbSearch));
 
-  const tbody = el("erb-tbody");
-  if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--txt3);padding:2rem">${_t("Sin resultados")}</td></tr>`;
+  const box = el("erb-list");
+  const erb = estadoERB();
+  if (!list.length || !erb) {
+    box.innerHTML = `<p class="hb-cargando">${_t("Sin resultados")}</p>`;
     el("erb-count").textContent = _t("Mostrando 0 estaciones");
     return;
   }
-
-  tbody.innerHTML = list
-    .map(
-      (s) => `
-    <tr data-id="${esc(s.id)}" data-nombre="${esc(s.nombre)}">
-      <td>
-        <div class="row-icon-wrap">
-          <span class="row-derrick">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-              <rect x="4" y="10" width="16" height="11" rx="1"/>
-              <path d="M8 10V7a4 4 0 0 1 8 0v3"/>
-              <ellipse cx="12" cy="15.5" rx="3" ry="1.8"/>
-              <line x1="12" y1="2" x2="12" y2="4"/>
-            </svg>
-          </span>
-          <span class="row-name">${esc(s.nombre)}</span>
-        </div>
-      </td>
-      <td>${esc(s.ubicacion)}</td>
-      <td style="text-align:center">${esc(s.tanques)}</td>
-      <td>${esc(s.ts || "—")}</td>
-      <td>${fmtStatus(s.estado)}</td>
-      <td class="td-arrow">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-      </td>
-    </tr>`,
-    )
-    .join("");
-
-  tbody.querySelectorAll("tr").forEach((tr) =>
-    tr.addEventListener("click", () =>
-      navigate("erb-detail", {
-        id: tr.dataset.id,
-        nombre: tr.dataset.nombre,
-      }),
-    ),
-  );
-
-  el("erb-count").textContent = _t(
-    "Mostrando 1 a {count} de {total} estaciones",
-  )
+  // Por ahora la única estación con datos es E41 (ver DB.getERBDetalle)
+  box.innerHTML = list.map(() => tarjetaERB(erb, true)).join("");
+  enlazarNavegacion(box);
+  el("erb-count").textContent = _t("Mostrando 1 a {count} de {total} estaciones")
     .replace("{count}", list.length)
     .replace("{total}", list.length);
-  renderPagination("erb-pagination", list.length, 1);
 }
 
 /* ──────────────────────────────────────────────
@@ -1932,7 +1974,7 @@ let _pzFilter = "all",
 
 on("pozos", async () => {
   showLoading("Cargando pozos...");
-  await DB.loadPozos().catch(() => {});
+  await Promise.all([DB.loadPozos().catch(() => {}), DB.loadPozosResumen()]);
   hideLoading();
   renderPozosList();
 
@@ -1962,53 +2004,25 @@ function renderPozosList() {
   if (_pzSearch)
     list = list.filter((p) => p.nombre.toLowerCase().includes(_pzSearch));
 
-  const tbody = el("pz-tbody");
+  const box = el("pz-list");
   if (!list.length) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:var(--txt3);padding:2rem">${_t("Sin resultados")}</td></tr>`;
+    box.innerHTML = `<p class="hb-cargando">${_t("Sin resultados")}</p>`;
     el("pz-count").textContent = _t("Mostrando 0 pozos");
     return;
   }
-
-  tbody.innerHTML = list
-    .map(
-      (p) => `
-    <tr data-nombre="${esc(p.nombre)}">
-      <td>
-        <div class="row-icon-wrap">
-          <span class="row-derrick" style="color:var(--green)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
-              <line x1="12" y1="2" x2="12" y2="22"/>
-              <path d="M5 8h14M8 12h8"/>
-              <path d="M7 5l5-3 5 3"/>
-              <rect x="9" y="15" width="6" height="4" rx="1"/>
-            </svg>
-          </span>
-          <span class="row-name">${esc(p.nombre)}</span>
-        </div>
-      </td>
-      <td>${esc(p.sector)}</td>
-      <td>${esc(p.campo)}</td>
-      <td>${esc(p.ts || "—")}</td>
-      <td>${fmtStatusPozo(p.estado)}</td>
-      <td class="td-arrow">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-      </td>
-    </tr>`,
-    )
-    .join("");
-
-  tbody
-    .querySelectorAll("tr")
-    .forEach((tr) =>
-      tr.addEventListener("click", () =>
-        navigate("pozo-detail", { nombre: tr.dataset.nombre }),
-      ),
-    );
-
+  const estados = list.map(estadoPozo);
+  const activos = ordenarPozos(estados.filter((a) => !a.inactivo));
+  const inactivos = estados.filter((a) => a.inactivo).sort((a, b) => (b.f || 0) - (a.f || 0));
+  box.innerHTML =
+    encabezadoPozos(true) +
+    activos.map((a) => filaPozo(a, true)).join("") +
+    (inactivos.length
+      ? `<h4 class="pz-grupo">${_t("Sin reportar en más de 7 días")}</h4>` + inactivos.map((a) => filaPozo(a, true)).join("")
+      : "");
+  enlazarNavegacion(box);
   el("pz-count").textContent = _t("Mostrando 1 a {count} de {total} pozos")
     .replace("{count}", list.length)
     .replace("{total}", list.length);
-  renderPagination("pz-pagination", list.length, 1);
 }
 
 /* ──────────────────────────────────────────────
@@ -3559,7 +3573,7 @@ async function init() {
           renderERBDetail(_erbRange, _erbCustomFrom, _erbCustomTo);
         }
       } else if (_cur === "pozos") {
-        await DB.loadPozos().catch(() => {});
+        await Promise.all([DB.loadPozos().catch(() => {}), DB.loadPozosResumen()]);
         const latest = DB.getPozos();
         const ts = latest.length ? latest.map((p) => p.ts).join("|") : null;
         if (ts !== lastRenderedPozosTs) {
