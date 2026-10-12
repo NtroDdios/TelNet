@@ -3173,23 +3173,6 @@ window.saveUsersFromModal = async function () {
 /* ──────────────────────────────────────────────
    PAGINATION
 ────────────────────────────────────────────── */
-function renderPagination(containerId, total, current) {
-  const el_ = el(containerId);
-  if (!el_) return;
-  const pageSvgL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15,18 9,12 15,6"/></svg>`;
-  const pageSvgR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9,18 15,12 9,6"/></svg>`;
-  const pageSvgLL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="11,17 6,12 11,7"/><polyline points="18,17 13,12 18,7"/></svg>`;
-  const pageSvgRR = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="13,17 18,12 13,7"/><polyline points="6,17 11,12 6,7"/></svg>`;
-
-  el_.innerHTML = `
-    <button class="pg-btn" ${current <= 1 ? "disabled" : ""}>${pageSvgLL}</button>
-    <button class="pg-btn" ${current <= 1 ? "disabled" : ""}>${pageSvgL}</button>
-    <button class="pg-btn active">${current}</button>
-    <button class="pg-btn" ${total <= 1 ? "disabled" : ""}>${pageSvgR}</button>
-    <button class="pg-btn" ${total <= 1 ? "disabled" : ""}>${pageSvgRR}</button>
-  `;
-}
-
 /* ──────────────────────────────────────────────
    SESSION
 ────────────────────────────────────────────── */
