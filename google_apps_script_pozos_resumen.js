@@ -82,8 +82,10 @@ function pozAhora() {
 
 function pozHoja(ss, nombre, encabezados) {
   var sh = ss.getSheetByName(nombre);
-  if (!sh) {
-    sh = ss.insertSheet(nombre, ss.getNumSheets());
+  if (!sh) sh = ss.insertSheet(nombre, ss.getNumSheets());
+  // Repone la fila de encabezados si falta (pestaña nueva o fila 1 borrada / sobrescrita)
+  if (String(sh.getRange(1, 1).getValue()) !== encabezados[0]) {
+    if (sh.getLastRow() > 0) sh.insertRowBefore(1);
     sh.getRange(1, 1, 1, encabezados.length).setValues([encabezados]).setFontWeight("bold");
     sh.setFrozenRows(1);
   }

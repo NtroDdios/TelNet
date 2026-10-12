@@ -18,9 +18,16 @@ const DB = (function () {
   /* Pestañas que llena google_apps_script_pozos_resumen.js en la hoja de pozos */
   var POZOS_PUB =
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vT_8dadg9C3qMvGt9nHj29zA4gpewQt_5J1DToV9jtunqdS-qDY9WaBZ89YBhhGvZIx9AQSAdQBDov1/pub?output=csv";
-  var POZOS_DIA_CSV = POZOS_PUB + "&gid=1460786785";
-  var POZOS_EVENTOS_CSV = POZOS_PUB + "&gid=2130024985";
-  var POZOS_HOY_CSV = POZOS_PUB + "&gid=1448633695";
+  var POZOS_DIA_CSV = POZOS_PUB + "&gid=1193255263";
+  var POZOS_EVENTOS_CSV = POZOS_PUB + "&gid=2024879093";
+  var POZOS_HOY_CSV = POZOS_PUB + "&gid=2017838129";
+  // Mismas columnas que escribe google_apps_script_pozos_resumen.js
+  var POZOS_ENC_DIA = [
+    "fecha_cierre", "pozo", "horas_operando", "horas_paro", "horas_sin_com",
+    "disponibilidad_pct", "paros", "muestras", "rpm_prom", "corriente_prom",
+    "ptp_prom", "temp_gen_prom", "ultimo_estado", "ultima_lectura",
+  ];
+  var POZOS_ENC_EVENTOS = ["dia_operativo", "pozo", "tipo", "inicio", "fin", "horas", "detalle"];
 
   var MAX_ROWS = 250000;
   var TTL = 30000; // 30 seconds — keeps live data fresh
@@ -327,7 +334,8 @@ const DB = (function () {
      Se lee por nombre de columna para que agregar columnas en la hoja no rompa la app. */
   var RES_TANQUES = ["TV-601", "TV-602", "TV-741"];
 
-  async function fetchTabla(url) {
+  /* `encabezados` (opcional): columnas esperadas, por si la fila 1 de la pestaña se perdió */
+  async function fetchTabla(url, encabezados) {
     var separator = url.indexOf("?") !== -1 ? "&" : "?";
     var res = await fetch(url + separator + "t=" + Date.now(), { cache: "no-store" });
     if (!res.ok) throw new Error("HTTP " + res.status);
@@ -338,7 +346,12 @@ const DB = (function () {
     var head = csvSplit(lines[0]).map(function (h) {
       return h.trim();
     });
-    return lines.slice(1).map(function (line) {
+    var datos = lines.slice(1);
+    if (encabezados && head[0] !== encabezados[0]) {
+      head = encabezados;
+      datos = lines;
+    }
+    return datos.map(function (line) {
       var p = csvSplit(line);
       var o = {};
       head.forEach(function (h, i) {
@@ -434,31 +447,39 @@ const DB = (function () {
     var now = Date.now();
     if (cache.pozosResumen.ts && now - cache.pozosResumen.ts < RESUMEN_TTL)
       return cache.pozosResumen;
-    try {
-      var tablas = await Promise.all([
-        fetchTabla(POZOS_DIA_CSV),
-        fetchTabla(POZOS_EVENTOS_CSV),
-        fetchTabla(POZOS_HOY_CSV),
-      ]);
-      cache.pozosResumen = {
-        dias: tablas[0].map(parsePozoDia),
-        eventos: tablas[1].map(function (o) {
-          return {
-            dia: o.dia_operativo,
-            pozo: o.pozo,
-            tipo: o.tipo,
-            inicio: o.inicio,
-            fin: o.fin,
-            horas: toF(o.horas),
-            detalle: o.detalle,
-          };
-        }),
-        hoy: tablas[2].map(parsePozoDia),
-        ts: now,
-      };
-    } catch (e) {
-      console.warn("[DB] Resumen de pozos fetch failed:", e.message);
-    }
+    // Cada pestaña por separado: si una falla se conserva lo anterior y se reintenta en la siguiente carga
+    var r = await Promise.allSettled([
+      fetchTabla(POZOS_DIA_CSV, POZOS_ENC_DIA),
+      fetchTabla(POZOS_EVENTOS_CSV, POZOS_ENC_EVENTOS),
+      fetchTabla(POZOS_HOY_CSV, POZOS_ENC_DIA),
+    ]);
+    var c = cache.pozosResumen;
+    var fallas = 0;
+    r.forEach(function (x) {
+      if (x.status === "rejected") {
+        fallas++;
+        console.warn("[DB] Resumen de pozos fetch failed:", x.reason && x.reason.message);
+      }
+    });
+    cache.pozosResumen = {
+      dias: r[0].status === "fulfilled" ? r[0].value.map(parsePozoDia) : c.dias,
+      eventos:
+        r[1].status === "fulfilled"
+          ? r[1].value.map(function (o) {
+              return {
+                dia: o.dia_operativo,
+                pozo: o.pozo,
+                tipo: o.tipo,
+                inicio: o.inicio,
+                fin: o.fin,
+                horas: toF(o.horas),
+                detalle: o.detalle,
+              };
+            })
+          : c.eventos,
+      hoy: r[2].status === "fulfilled" ? r[2].value.map(parsePozoDia) : c.hoy,
+      ts: fallas ? 0 : now,
+    };
     return cache.pozosResumen;
   }
 
